@@ -40,17 +40,6 @@ npm run preview
 
 預計公開網址：<https://daisy116.github.io/freshcare-web/>
 
-目前尚未建立遠端 Repository 或部署。請先在 GitHub 以 `Daisy116` 帳號建立名為 `freshcare-web` 的空 Repository（不要初始化 README、License 或 `.gitignore`），然後在本機專案目錄執行：
-
-```bash
-git remote add origin https://github.com/Daisy116/freshcare-web.git
-git add .
-git commit -m "Build FreshCare customer support frontend"
-git branch -M main
-git push -u origin main
-```
-
-推送後到 Repository 的 **Settings → Pages → Build and deployment**，將來源設定為 **GitHub Actions**。之後每次推送至 `main` 會自動執行測試、TypeScript 檢查、建置與部署；也可在 **Actions → Deploy to GitHub Pages → Run workflow** 手動部署。部署結果與錯誤紀錄可在 Actions 查看。完成首次部署後即可透過上方網址體驗。
 
 ### Base path 與路由
 
