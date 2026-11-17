@@ -30,6 +30,10 @@ describe('ProductSelector', () => {
   it('opens with all active products and shows the selected product when closed', async () => {
     const wrapper = mountSelector()
     expect(wrapper.get('.product-chevron').classes()).not.toContain('expanded')
+    await wrapper.get('.product-chevron-button').trigger('click')
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
+    await wrapper.get('.product-chevron-button').trigger('click')
+    expect(wrapper.find('.product-menu').exists()).toBe(false)
     await wrapper.get('.product-trigger').trigger('click')
     expect(wrapper.get('.product-chevron').classes()).toContain('expanded')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
@@ -38,32 +42,34 @@ describe('ProductSelector', () => {
     await wrapper.get('#product-option-P007 button').trigger('click')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['P007'])
     await wrapper.setProps({ modelValue: 'P007' })
-    expect(wrapper.get('.product-trigger').text()).toContain('黑糖柿')
+    expect((wrapper.get('.product-trigger').element as HTMLInputElement).value).toBe('黑糖柿')
     expect(wrapper.find('.product-menu').exists()).toBe(false)
   })
 
-  it('clears selected-product text from the search and reopens with all products', async () => {
+  it('searches in the product field and clears the query whenever reopened', async () => {
     const wrapper = track(mount(ProductSelector, {
       props: { modelValue: selected.id, products, status: 'success', source: 'api' },
       attachTo: document.body,
     }))
     await wrapper.get('.product-trigger').trigger('click')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
-    expect((wrapper.get('[role="searchbox"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[role="searchbox"]').exists()).toBe(false)
+    expect((wrapper.get('.product-trigger').element as HTMLInputElement).value).toBe('')
 
-    await wrapper.get('[role="searchbox"]').setValue('葡萄')
+    await wrapper.get('.product-trigger').setValue('葡萄')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(3)
-    await wrapper.get('[role="searchbox"]').setValue('不存在的商品')
+    await wrapper.get('.product-trigger').setValue('不存在的商品')
     expect(wrapper.get('.no-results').text()).toBe('找不到符合條件的商品')
-    await wrapper.get('[role="searchbox"]').setValue('葡萄')
     document.documentElement.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await nextTick()
     expect(wrapper.find('.product-menu').exists()).toBe(false)
+    expect((wrapper.get('.product-trigger').element as HTMLInputElement).value).toBe('黑糖柿')
 
     await wrapper.get('.product-trigger').trigger('click')
-    expect((wrapper.get('[role="searchbox"]').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('.product-trigger').element as HTMLInputElement).value).toBe('')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
-    expect(wrapper.get('[role="option"][aria-selected="true"]').text()).toContain('黑糖柿')
+    expect(wrapper.get('[role="option"][aria-selected="true"] .product-option-copy').text()).toBe('黑糖柿')
+    expect(wrapper.get('[role="option"][aria-selected="true"] .product-option-image').element.tagName).toBe('IMG')
   })
 
   it('closes on an outside click or Escape without clearing the selected id', async () => {
@@ -77,22 +83,30 @@ describe('ProductSelector', () => {
     expect(wrapper.find('.product-menu').exists()).toBe(false)
 
     await wrapper.get('.product-trigger').trigger('click')
-    await wrapper.get('[role="searchbox"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('.product-trigger').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('.product-menu').exists()).toBe(false)
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(wrapper.get('.product-trigger').text()).toContain('黑糖柿')
+    expect((wrapper.get('.product-trigger').element as HTMLInputElement).value).toBe('黑糖柿')
   })
 
-  it('supports keyboard selection and updates the selected product information', async () => {
+  it('supports keyboard selection and only marks the current selection', async () => {
     const wrapper = mountSelector()
     await wrapper.get('.product-trigger').trigger('keydown', { key: 'ArrowDown' })
     expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
-    await wrapper.get('[role="searchbox"]').setValue('黑糖柿')
-    await wrapper.get('[role="searchbox"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('.product-trigger').setValue('黑糖柿')
+    await wrapper.get('.product-trigger').trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['P007'])
 
     await wrapper.setProps({ modelValue: 'P007' })
     expect(wrapper.get('.selected-product h3').text()).toBe('黑糖柿')
+    await wrapper.get('.product-trigger').trigger('click')
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(10)
+    expect(wrapper.findAll('[role="option"][aria-selected="true"]')).toHaveLength(1)
+
+    await wrapper.get('#product-option-P001 button').trigger('click')
+    await wrapper.setProps({ modelValue: 'P001' })
+    expect(wrapper.get('.selected-product h3').text()).toBe('長野麝香葡萄')
+    expect(wrapper.get('.product-trigger').element).toHaveProperty('value', '長野麝香葡萄')
   })
 
   it('labels Mock data and keeps API loading, empty and error states', async () => {

@@ -14,29 +14,30 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; retry: [] }>()
 const root = ref<HTMLElement | null>(null)
-const searchInput = ref<HTMLInputElement | null>(null)
+const trigger = ref<HTMLInputElement | null>(null)
 const searchQuery = ref('')
 const isOpen = ref(false)
-const activeIndex = ref(0)
+const activeIndex = ref(-1)
 const selectedProductId = computed(() => props.modelValue)
 const selectedProduct = computed(() => props.products.find((product) => product.id === selectedProductId.value))
+const inputValue = computed(() => isOpen.value ? searchQuery.value : selectedProduct.value?.name ?? '')
 const filteredProducts = computed(() => {
   const search = searchQuery.value.trim().toLocaleLowerCase()
   return props.products.filter((product) => `${product.name} ${product.origin}`.toLocaleLowerCase().includes(search))
 })
 const activeProductId = computed(() => filteredProducts.value[activeIndex.value]?.id)
 
-watch(filteredProducts, () => { activeIndex.value = 0 })
+watch(filteredProducts, () => { activeIndex.value = -1 })
 watch(activeIndex, () => {
-  void nextTick(() => root.value?.querySelector<HTMLElement>('.highlighted')?.scrollIntoView?.({ block: 'nearest' }))
+  void nextTick(() => root.value?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' }))
 })
 
 function openMenu() {
   if (props.status !== 'success') return
+  if (isOpen.value) return
   searchQuery.value = ''
-  activeIndex.value = 0
+  activeIndex.value = -1
   isOpen.value = true
-  void nextTick(() => searchInput.value?.focus())
 }
 
 function toggleMenu() {
@@ -45,46 +46,55 @@ function toggleMenu() {
     return
   }
   openMenu()
+  void nextTick(() => trigger.value?.focus())
 }
 
-function closeMenu(restoreFocus = false) {
+function updateSearch(event: Event) {
+  if (!isOpen.value) isOpen.value = true
+  searchQuery.value = (event.target as HTMLInputElement).value
+}
+
+function closeMenu() {
   isOpen.value = false
   searchQuery.value = ''
-  activeIndex.value = 0
-  if (restoreFocus) void nextTick(() => root.value?.querySelector<HTMLButtonElement>('.product-trigger')?.focus())
+  activeIndex.value = -1
 }
 
 function choose(product: Product) {
   emit('update:modelValue', product.id)
-  closeMenu(true)
+  closeMenu()
 }
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && isOpen.value) {
     event.preventDefault()
     event.stopPropagation()
-    closeMenu(true)
+    closeMenu()
     return
   }
 
-  if (event.target === root.value?.querySelector('.product-trigger')) {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+  if (!isOpen.value) {
+    if (event.target === root.value?.querySelector('.product-trigger')
+      && (event.key === 'ArrowDown' || event.key === 'Enter')) {
       event.preventDefault()
-      if (!isOpen.value) openMenu()
+      openMenu()
     }
     return
   }
-
-  if (!isOpen.value) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    activeIndex.value = Math.min(activeIndex.value + 1, filteredProducts.value.length - 1)
+    activeIndex.value = activeIndex.value < 0
+      ? 0
+      : Math.min(activeIndex.value + 1, filteredProducts.value.length - 1)
   } else if (event.key === 'ArrowUp') {
     event.preventDefault()
-    activeIndex.value = Math.max(activeIndex.value - 1, 0)
+    activeIndex.value = activeIndex.value < 0
+      ? filteredProducts.value.length - 1
+      : Math.max(activeIndex.value - 1, 0)
   } else if (event.key === 'Enter') {
     event.preventDefault()
     const product = filteredProducts.value[activeIndex.value]
+      ?? (filteredProducts.value.length === 1 ? filteredProducts.value[0] : undefined)
     if (product) choose(product)
   }
 }
@@ -102,48 +112,46 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleOutsideP
     <label class="field-label" for="product-trigger">商品名稱 <span class="required-mark">*</span></label>
     <p v-if="source === 'mock'" class="product-source-note" role="status">目前顯示示範商品資料。</p>
     <div class="product-picker">
-      <button
-        type="button"
+      <input
+        ref="trigger"
         id="product-trigger"
         class="text-control product-trigger"
         :class="{ 'has-error': error, 'product-search-disabled': status !== 'success' }"
+        :value="inputValue"
         role="combobox"
         aria-label="商品名稱"
         aria-autocomplete="list"
         aria-haspopup="listbox"
         :aria-expanded="isOpen"
         aria-controls="product-options"
-        :aria-activedescendant="isOpen ? `product-option-${activeProductId}` : undefined"
+        :aria-activedescendant="isOpen && activeProductId ? `product-option-${activeProductId}` : undefined"
         :aria-busy="status === 'loading'"
         :disabled="status !== 'success'"
+        :placeholder="status === 'loading' ? '商品資料載入中…' : '請選擇商品名稱'"
+        autocomplete="off"
+        @click="openMenu"
+        @input="updateSearch"
+      />
+      <button
+        type="button"
+        class="product-chevron-button"
+        :aria-label="isOpen ? '收合商品選單' : '展開商品選單'"
+        :disabled="status !== 'success'"
+        tabindex="-1"
+        @pointerdown.prevent
         @click="toggleMenu"
       >
-        <span class="product-trigger-text" :class="{ 'placeholder-text': !selectedProduct }">{{ selectedProduct?.name ?? (status === 'loading' ? '商品資料載入中…' : '請選擇商品名稱') }}</span>
         <svg class="product-chevron" :class="{ expanded: isOpen }" viewBox="0 0 20 20" fill="none" aria-hidden="true">
           <path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
       <div v-if="isOpen" class="product-menu">
-        <label class="visually-hidden" for="product-search-input">搜尋商品名稱或產地</label>
-        <input
-          id="product-search-input"
-          ref="searchInput"
-          v-model="searchQuery"
-          class="text-control product-menu-search"
-          type="search"
-          role="searchbox"
-          aria-label="搜尋商品名稱或產地"
-          aria-controls="product-options"
-          :aria-activedescendant="activeProductId ? `product-option-${activeProductId}` : undefined"
-          placeholder="搜尋商品名稱或產地"
-          autocomplete="off"
-        />
         <ul id="product-options" class="product-options" role="listbox" aria-label="可選商品">
-          <li v-for="(product, index) in filteredProducts" :id="`product-option-${product.id}`" :key="product.id" role="option" :aria-selected="product.id === selectedProductId" :class="{ highlighted: index === activeIndex }">
+          <li v-for="(product, index) in filteredProducts" :id="`product-option-${product.id}`" :key="product.id" role="option" :aria-selected="product.id === selectedProductId" :data-active="index === activeIndex">
             <button type="button" class="product-option-button" @pointerdown.prevent @click="choose(product)">
               <ProductImage class="product-option-image" :src="product.image" :alt="`${product.name} 商品縮圖`" />
-              <span class="product-option-copy"><span>{{ product.name }}</span><small>{{ product.origin }}<template v-if="product.priceDisplay">・{{ product.priceDisplay }}</template></small></span>
-              <svg v-if="product.id === selectedProductId" class="product-check" viewBox="0 0 20 20" fill="none" aria-label="已選取"><path d="m4 10 4 4 8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <span class="product-option-copy">{{ product.name }}</span>
+              <span class="product-check-slot"><svg v-if="product.id === selectedProductId" class="product-check" viewBox="0 0 20 20" fill="none" aria-label="已選取"><path d="m4 10 4 4 8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
             </button>
           </li>
           <li v-if="!filteredProducts.length" class="no-results">找不到符合條件的商品</li>
