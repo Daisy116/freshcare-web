@@ -8,7 +8,6 @@ const initialForm = (): TicketForm => ({
   orderNumber: '',
   orderNumberUnavailable: false,
   productId: '',
-  specification: '',
   quantity: 1,
   channel: '官網線上購買',
   deliveryDate: '',

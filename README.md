@@ -6,6 +6,7 @@ FreshCare 是一個繁體中文生鮮電商客服前台展示網站，提供商�
 
 - Vue 3 Composition API、`<script setup>` 與 TypeScript
 - Vite、Tailwind CSS 4（官方 Vite plugin）、Vue Router Hash History
+- 商品查詢由獨立的 `src/services/productService.ts` 提供，支援 n8n API 與本地 Mock
 - Service 層：`src/services/ticketService.ts`，預設使用記憶體 Mock
 - GitHub Actions 使用官方 Pages Actions 建置並部署 `dist/`
 
@@ -47,7 +48,17 @@ npm run preview
 
 若 Repository 更名，請將 `vite.config.ts` 的正式 base path 改成 `/<新 Repository 名稱>/`，並同步更新 README 公開網址。若發布至使用者／組織根目錄，正式 base path 應改為 `/`。
 
-## Mock 與未來 API
+## 商品資料 API
+
+本機開發預設以 `.env.development` 啟用 `VITE_PRODUCTS_SOURCE=api`。前端只呼叫同源 `GET /api/products`；Vite 開發伺服器將請求代理至 `http://localhost:5678/webhook/freshcare/products`。請先啟動本機 n8n 並啟用該 Production Webhook。
+
+若要在本機改用示範資料，可在 `.env.local` 設定 `VITE_PRODUCTS_SOURCE=mock` 並重新啟動 Vite；移除此覆寫即可恢復 API 模式。
+
+回應需符合 `{ success: true, count, products }` 格式，且筆數、欄位與唯一 `product_id` 均須有效。若 n8n 無法連線或回應格式錯誤，表單會顯示錯誤及重試按鈕，不會悄悄切換成 Mock。Mock 模式則清楚標示「目前顯示示範商品資料」。Webhook 未提供的圖片使用本地占位圖，未提供的商品規格不會自行假造。
+
+GitHub Pages 正式建置一律鎖定 Mock 商品資料，不會嘗試連線訪客的 `localhost`。未來部署公開 HTTPS API 時，需透過獨立 Service 設定 API 模式及同源代理／後端；勿將私人憑證放入前端。
+
+## 工單 Mock 與未來 API
 
 預設 `VITE_TICKET_API_MODE=mock`（未設定時亦使用 Mock）。切換 API 需在本機 `.env.local` 設定非機密的公開值：
 

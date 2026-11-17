@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FormInput from '@/components/FormInput.vue'
 import FormSelect from '@/components/FormSelect.vue'
 import ImageUploader from '@/components/ImageUploader.vue'
 import ProductSelector from '@/components/ProductSelector.vue'
 import { useTicketDraft } from '@/composables/useTicketDraft'
-import { products } from '@/data/products'
+import { useProducts } from '@/composables/useProducts'
 import { isOrderRelatedIssue, validateTicket } from '@/utils/ticketValidation'
 
 const { draft } = useTicketDraft()
+const { products, status: productsStatus, error: productsError, source: productsSource, loadProducts } = useProducts()
 const router = useRouter()
 const route = useRoute()
 const errors = reactive<Record<string, string>>({})
@@ -30,10 +31,9 @@ const resolutions = [
   { value: '退款', title: '希望退款', description: '由客服依商品狀況協助辦理退款。' },
   { value: '客服聯繫', title: '希望客服致電說明', description: '由專員與您聯繫，進一步說明處理方式。' },
 ]
-const selectedProduct = computed(() => products.find((product) => product.id === draft.productId))
 const orderNumberRequired = computed(() => isOrderRelatedIssue(draft.issueType))
 const missingDraftNotice = computed(() => route.query.notice === 'missing')
-watch(() => draft.productId, () => { draft.specification = '' })
+onMounted(() => { void loadProducts() })
 
 function setPhotoError(message: string) {
   photoError.value = message
@@ -41,7 +41,7 @@ function setPhotoError(message: string) {
 
 function nextStep() {
   Object.keys(errors).forEach((key) => delete errors[key])
-  Object.assign(errors, validateTicket(draft))
+  Object.assign(errors, validateTicket(draft, products.value.map((product) => product.id)))
   if (draft.photos.length > 5) photoError.value = '照片最多只能上傳 5 張。'
   if (Object.keys(errors).length || photoError.value) {
     document.querySelector('.has-error, [aria-invalid="true"], .field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -84,9 +84,8 @@ function nextStep() {
 
         <section class="form-card">
           <div class="section-heading"><span class="step-number">2</span><div><h2>購買商品資訊</h2><p>請指定需要反映問題的果品與批次細節</p></div></div>
-          <ProductSelector v-model="draft.productId" :error="errors.productId" />
+          <ProductSelector v-model="draft.productId" :products="products" :status="productsStatus" :source="productsSource" :load-error="productsError" :error="errors.productId" @retry="loadProducts(true)" />
           <div class="form-grid product-details">
-            <FormSelect id="product-specification" v-model="draft.specification" label="商品規格" :options="(selectedProduct?.availableSpecifications ?? []).map((spec) => ({ value: spec, label: spec }))" />
             <div class="field">
               <label class="field-label">問題果品數量</label>
               <div class="quantity-control"><button type="button" aria-label="減少數量" :disabled="draft.quantity <= 1" @click="draft.quantity = Math.max(1, draft.quantity - 1)">−</button><output>{{ draft.quantity }}</output><button type="button" aria-label="增加數量" @click="draft.quantity += 1">＋</button><span>份</span></div>

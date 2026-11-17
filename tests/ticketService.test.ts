@@ -9,7 +9,6 @@ const form: TicketForm = {
   orderNumber: '',
   orderNumberUnavailable: false,
   productId: 'muscat',
-  specification: '',
   quantity: 1,
   channel: '官網線上購買',
   deliveryDate: '',

@@ -6,6 +6,7 @@ defineProps<{
   options: { value: string; label: string }[]
   required?: boolean
   error?: string
+  disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
@@ -13,7 +14,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 <template>
   <div class="field">
     <label class="field-label" :for="id">{{ label }} <span v-if="required" class="required-mark">*</span></label>
-    <select :id="id" class="text-control select-control" :class="{ 'has-error': error }" :value="modelValue" :aria-invalid="Boolean(error)" @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)">
+    <select :id="id" class="text-control select-control" :class="{ 'has-error': error }" :value="modelValue" :disabled="disabled" :aria-invalid="Boolean(error)" @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)">
       <option value="" disabled>請選擇</option>
       <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
     </select>

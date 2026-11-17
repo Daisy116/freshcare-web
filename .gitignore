@@ -6,6 +6,7 @@ design-reference/
 .env
 .env.*
 !.env.example
+!.env.development
 *.local
 *.log
 .idea/

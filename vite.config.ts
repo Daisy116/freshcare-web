@@ -11,7 +11,16 @@ export default defineConfig(({ mode }) => ({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  server: {
+    proxy: {
+      '/api/products': {
+        target: 'http://localhost:5678',
+        changeOrigin: true,
+        rewrite: () => '/webhook/freshcare/products',
+      },
+    },
+  },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
   },
 }))

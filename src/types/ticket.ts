@@ -5,7 +5,6 @@ export interface TicketForm {
   orderNumber: string
   orderNumberUnavailable: boolean
   productId: string
-  specification: string
   quantity: number
   channel: string
   deliveryDate: string
