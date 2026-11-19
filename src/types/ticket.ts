@@ -25,9 +25,16 @@ export interface TicketAttachment {
 export interface SubmittedTicket {
   ticketNumber: string
   submittedAt: string
-  status: '已受理'
+  ticketStatus: string
+  source: 'mock' | 'api'
   form: TicketForm
   attachments: TicketAttachment[]
+}
+
+export interface TicketSubmissionResponse {
+  ticket_id: string
+  created_at: string
+  ticket_status: string
 }
 
 export interface TicketTimelineItem {
@@ -35,6 +42,38 @@ export interface TicketTimelineItem {
   description: string
   timestamp: string
   complete: boolean
+  active?: boolean
+}
+
+export interface TicketLookupApiTicket {
+  ticket_id: string
+  product_id?: string
+  product_name?: string
+  issue_type?: string
+  order_number?: string
+  ticket_status: string
+  review_status?: string
+  created_at: string
+  closed_at?: string | null
+  events?: TicketLookupApiEvent[]
+  timeline?: TicketLookupApiEvent[]
+}
+
+export interface TicketLookupApiEvent {
+  title?: string
+  status?: string
+  event?: string
+  event_type?: string
+  description?: string
+  timestamp?: string
+  created_at?: string
+  occurred_at?: string
+  complete?: boolean
+}
+
+export interface TicketLookupApiResponse {
+  success: true
+  ticket: TicketLookupApiTicket
 }
 
 export interface TicketStatus {
@@ -42,6 +81,12 @@ export interface TicketStatus {
   status: string
   submittedAt: string
   timeline: TicketTimelineItem[]
+  productName?: string
+  productId?: string
+  issueType?: string
+  orderNumber?: string
+  reviewStatus?: string
+  closedAt?: string | null
 }
 
 export type TicketLookupResult =

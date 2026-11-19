@@ -58,8 +58,8 @@ function nextStep() {
     <section class="hero-banner">
       <div class="hero-copy">
         <span class="eyebrow"><span aria-hidden="true">✿</span> 產地直通品質關懷・專業品管即時受理</span>
-        <div class="hero-title"><h1>商品問題反映</h1><span>24H 快速審核</span></div>
-        <p>我們珍視每一份旬味心意與果實品質。若到貨品項有任何碰撞出水、腐損或溫控瑕疵，請留下相關紀錄，客服團隊將第一時間為您妥善處理。</p>
+        <div class="hero-title"><h1>商品問題反映</h1><span>專人協助處理</span></div>
+        <p>我們重視每一位顧客的購物體驗。<br/>若您收到的商品有破損、腐壞、配送異常或其他問題，請填寫以下表單並提供相關資訊，客服團隊將協助您確認與處理。</p>
       </div>
       <div class="hero-promise"><span class="promise-icon">❄</span><div><strong>全程低溫冷鏈直送保證</strong><small>收到包裹 24 小時內受理專案退換或賠付補寄</small></div></div>
     </section>

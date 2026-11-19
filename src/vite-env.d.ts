@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   readonly PROD: boolean
   readonly VITE_PRODUCTS_SOURCE?: 'api' | 'mock'
-  readonly VITE_TICKET_API_MODE?: 'mock' | 'real'
+  readonly VITE_TICKET_API_MODE?: 'mock' | 'api' | 'real'
   readonly VITE_TICKET_API_URL?: string
 }
 

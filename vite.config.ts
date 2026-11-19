@@ -18,6 +18,16 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: () => '/webhook/freshcare/products',
       },
+      '/api/tickets': {
+        target: 'http://localhost:5678',
+        changeOrigin: true,
+        rewrite: () => '/webhook/freshcare/tickets',
+      },
+      '/api/track': {
+        target: 'http://localhost:5678',
+        changeOrigin: true,
+        rewrite: () => '/webhook/freshcare/track',
+      },
     },
   },
   test: {

@@ -1,5 +1,5 @@
 import { reactive, ref } from 'vue'
-import type { TicketForm } from '@/types/ticket'
+import type { SubmittedTicket, TicketForm } from '@/types/ticket'
 
 const initialForm = (): TicketForm => ({
   name: '',
@@ -19,7 +19,7 @@ const initialForm = (): TicketForm => ({
 })
 
 const draft = reactive<TicketForm>(initialForm())
-const submittedTicket = ref<{ ticketNumber: string; submittedAt: string } | null>(null)
+const submittedTicket = ref<SubmittedTicket | null>(null)
 
 export function useTicketDraft() {
   function resetDraft() {

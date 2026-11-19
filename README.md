@@ -1,13 +1,13 @@
 # FreshCare 鮮果選品｜顧客問題反映
 
-FreshCare 是一個繁體中文生鮮電商客服前台展示網站，提供商品問題反映、資料確認、模擬提交成功及案件查詢流程。商品圖片使用專案內的示意占位圖；目前沒有真正送信、外部 API 或後端資料庫。
+FreshCare 是一個繁體中文生鮮電商客服前台，提供商品問題反映、資料確認、提交成功及案件查詢流程。商品圖片使用專案內素材；提交可在本機使用 n8n API 或 Mock，GitHub Pages 正式建置固定使用 Mock。
 
 ## 技術架構
 
 - Vue 3 Composition API、`<script setup>` 與 TypeScript
 - Vite、Tailwind CSS 4（官方 Vite plugin）、Vue Router Hash History
 - 商品查詢由獨立的 `src/services/productService.ts` 提供，支援 n8n API 與本地 Mock
-- Service 層：`src/services/ticketService.ts`，預設使用記憶體 Mock
+- 工單 Service 層：`src/services/ticketService.ts`，支援本機 n8n 提交與記憶體 Mock
 - GitHub Actions 使用官方 Pages Actions 建置並部署 `dist/`
 
 ## 本機執行
@@ -32,8 +32,8 @@ npm run preview
 
 - `/#/contact`：填寫客服表單、搜尋商品、驗證欄位與預覽／移除照片。
 - `/#/confirm`：檢視全部提交資料，並可返回修改；沒有工作階段草稿時會安全導回表單。
-- `/#/success`：顯示模擬工單編號、提交時間與「已受理」狀態。
-- `/#/track`：使用工單編號及建立案件時的 Email 查詢模擬進度。
+- `/#/success`：顯示工單編號、提交時間與 API 回傳／Mock 狀態。
+- `/#/track`：使用工單編號及建立案件時的 Email 查詢案件狀態與事件 Timeline。
 
 草稿與 Mock 工單只保留在目前頁面工作階段的 JavaScript 記憶體，重新整理或關閉頁面後即清除；不會將真實顧客個資寫入 `localStorage`，Mock 也不會寄送郵件或將資料上傳至外部服務。照片限 JPG、PNG、WebP，最多 5 張、每張 5MB。
 
@@ -58,16 +58,19 @@ npm run preview
 
 GitHub Pages 正式建置一律鎖定 Mock 商品資料，不會嘗試連線訪客的 `localhost`。未來部署公開 HTTPS API 時，需透過獨立 Service 設定 API 模式及同源代理／後端；勿將私人憑證放入前端。
 
-## 工單 Mock 與未來 API
+## 工單提交 API 與 Mock
 
-預設 `VITE_TICKET_API_MODE=mock`（未設定時亦使用 Mock）。切換 API 需在本機 `.env.local` 設定非機密的公開值：
+本機 `.env.development` 預設設定 `VITE_TICKET_API_MODE=api`。前端呼叫同源 `POST /api/tickets`，Vite 開發伺服器代理至 `http://localhost:5678/webhook/freshcare/tickets`；請先啟動本機 n8n 並啟用該 Webhook。切換為 Mock 可在 `.env.local` 設定：
 
 ```dotenv
-VITE_TICKET_API_MODE=real
-VITE_TICKET_API_URL=https://your-api.example.com
+VITE_TICKET_API_MODE=mock
 ```
 
-真實 API 模式由 Service 層呼叫 `POST /tickets` 與 `POST /tickets/:id/status`，圖片以 multipart form 傳送。正式使用時需提供相容且具安全驗證的後端服務；GitHub Pages 是純靜態託管，不能隱藏 API Key 或代理私人憑證。任何私密密鑰都不可放在 `VITE_*` 環境變數或前端程式中；應由可信任的後端代理處理。
+API 提交會以 JSON 傳送表單欄位、`product_id` 與唯一 `request_id`，不傳送照片；如表單附有照片，需先返回表單移除後才能提交。成功回應需包含 `ticket_id`、`created_at` 與 `ticket_status`。
+
+案件查詢 API 模式會以 `POST /api/track` 傳送 `ticket_id` 與 `email`，Vite 代理至 `http://localhost:5678/webhook/freshcare/track`。支援直接回傳工單物件，或 `{ success: true, ticket: { ... } }`（也支援 n8n 常見的單筆陣列包裝）。工單需包含 `ticket_id`、`ticket_status`、`created_at`；可選擇回傳 `product_id`、`product_name`、`issue_type`、`review_status`、`order_number`、`closed_at` 及 `events`／`timeline`。無事件資料時只顯示目前工單狀態，不補造已完成事件。HTTP 404 顯示查無工單，403 顯示驗證失敗，其餘連線或回應錯誤可由頁面重試。Mock 查詢仍使用記憶體中的本機提交工單。
+
+GitHub Pages 建置時不論環境變數設定為何，一律使用 Mock 提交，不會連線訪客的 `localhost`。靜態網站不得存放 API Key 或 Webhook 密鑰；需要私人憑證時應改由可信任的後端代理處理。
 
 ## 安全與資料管理
 

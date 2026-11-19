@@ -254,27 +254,87 @@ a { color: inherit; }
 .ticket-summary strong { color: var(--primary); font-size: 17px; }
 .ticket-summary > span:first-child, .ticket-summary > span:nth-last-child(2) { color: var(--secondary); }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 99px; background: #c6ecca; color: var(--primary); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.success-timeline { margin: 0 auto; text-align: left; }
-.success-timeline h2 { margin-bottom: 15px; font-size: 16px; }
+.success-timeline { width: min(420px, 100%); margin: 0 auto; text-align: left; }
+
+.success-timeline h2 {
+  margin-bottom: 14px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
 .status-timeline { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
-.status-timeline li { position: relative; display: flex; gap: 12px; min-height: 78px; }
-.status-timeline li:not(:last-child)::after { position: absolute; top: 14px; bottom: -2px; left: 6px; width: 2px; background: #dce5dc; content: ""; }
-.timeline-dot { z-index: 1; width: 14px; height: 14px; flex-shrink: 0; border: 2px solid #c2c8c0; border-radius: 50%; background: white; }
-.complete .timeline-dot { border-color: var(--primary); background: var(--primary); box-shadow: inset 0 0 0 3px white; }
-.status-timeline strong { font-size: 12px; }
-.status-timeline p { margin: 3px 0; color: var(--secondary); font-size: 11px; line-height: 1.5; }
-.status-timeline time, .timeline-pending { color: var(--secondary); font-size: 10px; }
+
+.status-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  padding-bottom: 30px;
+}
+
+.status-timeline li:last-child { padding-bottom: 0; }
+
+.status-timeline li:not(:last-child)::after {
+  position: absolute;
+  top: 12px;
+  bottom: -5px;
+  left: 6px;
+  width: 2px;
+  background: #dce5dc;
+  content: "";
+}
+
+.status-timeline li.complete:not(:last-child)::after { background: #9ab99e; }
+.timeline-dot { z-index: 1; width: 14px; height: 14px; border: 2px solid #c2c8c0; border-radius: 50%; background: white; margin-top: 5px }
+.status-timeline li.complete .timeline-dot { border-color: var(--primary); background: var(--primary); box-shadow: inset 0 0 0 3px white; }
+.status-timeline li.active .timeline-dot { border-color: var(--primary); background: #c6ecca; box-shadow: 0 0 0 3px rgba(49,83,57,.12); }
+.status-timeline li.pending .timeline-dot { border-color: #c2c8c0; background: white; }
+.status-timeline li > div { min-width: 0; }
+.status-timeline strong {
+  display: block;
+  color: var(--on-surface);
+  font-size: 16px;     
+  font-weight: 700;      
+  line-height: 1.2;
+}
+.status-timeline li.active strong { color: var(--primary); }
+
+.status-timeline li.pending strong {
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.status-timeline p {
+  margin: 3px 0 0;
+  color: #4d6a49;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.status-timeline time,
+.timeline-pending {
+  display: block;
+  margin-top: 2px;
+  color: #aab0ab;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .success-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin: 22px 0 14px; }
 .track-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(260px, 1fr); align-items: start; gap: 20px; }
 .track-form .section-heading { margin-bottom: 22px; }
 .track-fields { display: flex; flex-direction: column; gap: 16px; }
 .track-fields .primary-button { align-self: flex-start; }
+.track-retry { align-self: flex-start; border: 0; padding: 0; background: none; }
 .track-help { background: var(--surface-low); }
 .text-link { color: var(--primary); font-size: 12px; font-weight: 600; text-decoration: none; }
 .track-result { grid-column: 1 / -1; }
 .result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 23px; }
 .result-heading h2 { margin-top: 8px; color: var(--primary); font-size: 20px; }
 .result-heading time { color: var(--secondary); font-size: 11px; }
+.track-ticket-details { margin-bottom: 22px; }
 
 @media (max-width: 900px) {
   .content-grid { grid-template-columns: minmax(0, 1.7fr) minmax(250px, 1fr); gap: 16px; }
