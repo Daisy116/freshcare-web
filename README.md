@@ -72,6 +72,14 @@ API 提交會以 JSON 傳送表單欄位、`product_id` 與唯一 `request_id`�
 
 GitHub Pages 建置時不論環境變數設定為何，一律使用 Mock 提交，不會連線訪客的 `localhost`。靜態網站不得存放 API Key 或 Webhook 密鑰；需要私人憑證時應改由可信任的後端代理處理。
 
+## 內部後台登入
+
+`/#/admin/login` 使用 `src/services/adminAuthService.ts` 驗證登入，成功後進入 `/#/admin/dashboard`。後台提供 Stitch 儀表板版型、工單佇列搜尋／篩選、動態 Mock KPI、工單詳情與事件歷程；AI 建議只展示 Mock 結果，未分析案件會顯示等待狀態。人工覆核、改部門、要求補件及結案功能為停用展示按鈕，不會改動資料。
+
+本機 `.env.development` 設定 `VITE_ADMIN_AUTH_MODE=api`；頁面以 `POST /api/admin/login` 傳送 HTTP Basic `Authorization` 標頭，由 Vite 代理到 `http://localhost:5678/webhook/freshcare/admin/login`。請先啟動本機 n8n 並啟用該 Webhook；帳密只在登入頁記憶體及 Service 模組記憶體中短暫存在，頁面重新整理即登出，登入成功後清空表單。
+
+共用 `adminApiFetch('/api/admin/...')` 會附上登入時使用的相同 Basic Authorization，未登入時拒絕發出管理 API 請求。正式建置（包括 GitHub Pages）一律強制 Mock，不連線登入 API；Mock 模式任意非空帳密即可進入展示頁，沒有身分驗證或資料存取保護。不得將正式帳密或 API Secret 寫入前端程式碼或環境變數。正式部署仍須搭配可信任後端與適當工作階段／權限保護；純前端記憶體驗證不能保護後端資源。
+
 ## 安全與資料管理
 
 `.gitignore` 已排除依賴、建置產物、環境檔與本機設定。不要將 API Key、OAuth Token、Webhook 密鑰、顧客個資或真實工單加入公開 Repository。

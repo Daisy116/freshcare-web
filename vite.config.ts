@@ -28,6 +28,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: () => '/webhook/freshcare/track',
       },
+      '/api/admin/login': {
+        target: 'http://localhost:5678',
+        changeOrigin: true,
+        rewrite: () => '/webhook/freshcare/admin/login',
+      },
     },
   },
   test: {

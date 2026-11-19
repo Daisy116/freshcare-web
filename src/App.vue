@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import SiteFooter from '@/components/SiteFooter.vue'
 import SiteHeader from '@/components/SiteHeader.vue'
+
+const route = useRoute()
+const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 </script>
 
 <template>
   <div class="app-shell">
-    <SiteHeader />
-    <main class="page-main">
+    <SiteHeader v-if="!isAdminRoute" />
+    <main class="page-main" :class="{ 'admin-page-main': isAdminRoute }">
       <RouterView />
     </main>
-    <SiteFooter />
+    <SiteFooter v-if="!isAdminRoute" />
   </div>
 </template>

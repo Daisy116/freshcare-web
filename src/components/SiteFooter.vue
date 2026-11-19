@@ -21,6 +21,13 @@ import { RouterLink } from 'vue-router'
         <a href="mailto:service@freshcarefruit.tw">常見疑問與保存指引</a>
       </section>
     </div>
-    <div class="footer-bottom"><span>© 2026 FreshCare 鮮果選品. All rights reserved.</span><span>珍惜每一份旬味心意</span></div>
+    <div class="footer-bottom">
+      <span>© 2026 FreshCare 鮮果選品. All rights reserved.</span>
+      <span class="footer-bottom-note">珍惜每一份旬味心意
+        <RouterLink class="admin-entry" to="/admin/login" aria-label="管理員登入" title="管理員登入">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19 6v5c0 4.7-3 8.3-7 10-4-1.7-7-5.3-7-10V6l7-3Z"/><path d="M9.5 12h5"/></svg>
+        </RouterLink>
+      </span>
+    </div>
   </footer>
 </template>
