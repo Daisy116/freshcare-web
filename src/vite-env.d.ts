@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_TICKET_API_MODE?: 'mock' | 'api' | 'real'
   readonly VITE_TICKET_API_URL?: string
   readonly VITE_ADMIN_AUTH_MODE?: 'mock' | 'api'
+  readonly VITE_ADMIN_TICKETS_MODE?: 'mock' | 'api'
 }
 
 interface ImportMeta {

@@ -5,6 +5,7 @@ import ProductImage from '@/components/ProductImage.vue'
 import { useTicketDraft } from '@/composables/useTicketDraft'
 import { useProducts } from '@/composables/useProducts'
 import { createTicketRequestId, submitTicket, ticketSubmissionMode } from '@/services/ticketService'
+import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 import { validateTicket } from '@/utils/ticketValidation'
 
 const { draft, submittedTicket } = useTicketDraft()
@@ -16,16 +17,7 @@ const isSubmitting = ref(false)
 const requestId = createTicketRequestId()
 const product = computed(() => products.value.find((item) => item.id === draft.productId))
 const photoUrls = computed(() => draft.photos.map((file) => ({ file, url: URL.createObjectURL(file) })))
-const issueLabel = computed(() => ({
-  quality: '商品品質／腐敗異常',
-  'shipping-damage': '商品破損／配送外箱擠壓損傷',
-  'wrong-item': '商品錯誤／規格不符或數量短少',
-  logistics: '出貨／冷鏈配送問題',
-  payment: '付款與退款相關諮詢',
-  modify: '訂單修改／取消申請',
-  preservation: '商品保存與食用適期諮詢',
-  others: '其他特殊售後情況',
-}[draft.issueType] ?? draft.issueType))
+const issueLabel = computed(() => getIssueTypeLabel(draft.issueType))
 onBeforeUnmount(() => photoUrls.value.forEach(({ url }) => URL.revokeObjectURL(url)))
 
 async function confirmSubmission() {

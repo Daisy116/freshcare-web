@@ -1,31 +1,53 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminTicketDetails from '@/components/AdminTicketDetails.vue'
 import AdminTicketQueue from '@/components/AdminTicketQueue.vue'
 import { clearAdminAuthentication } from '@/services/adminAuthService'
-import { calculateAdminTicketKpis, filterAdminTickets, mockAdminTickets } from '@/services/adminTicketService'
-import type { AdminTicketPriority, AdminTicketStatus } from '@/types/adminTicket'
+import {
+  AdminTicketDetailNotFoundError,
+  adminTicketsMode,
+  calculateAdminTicketKpis,
+  fetchAdminTicketDetail,
+  fetchAdminTickets,
+  filterAdminTickets,
+  mockAdminTickets,
+} from '@/services/adminTicketService'
+import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus } from '@/types/adminTicket'
+import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 
 const router = useRouter()
 const search = ref('')
 const statusFilter = ref<AdminTicketStatus | ''>('')
 const issueFilter = ref('')
 const priorityFilter = ref<AdminTicketPriority | ''>('')
-const selectedTicketId = ref<string | null>(mockAdminTickets[0]?.id ?? null)
+const dateFrom = ref('')
+const dateTo = ref('')
+const tickets = ref<AdminTicket[]>(adminTicketsMode === 'mock' ? mockAdminTickets : [])
+const selectedTicketId = ref<string | null>(tickets.value[0]?.id ?? null)
+const ticketDetail = ref<AdminTicket | null>(null)
+const detailStatus = ref<AdminTicketDetailStatus>('idle')
+const detailError = ref('')
+const detailWarnings = ref<string[]>([])
 const sidebarOpen = ref(false)
+const loadStatus = ref<'loading' | 'ready' | 'error'>(adminTicketsMode === 'api' ? 'loading' : 'ready')
+const loadError = ref('')
 
-const visibleTickets = computed(() => filterAdminTickets(mockAdminTickets, {
+const visibleTickets = computed(() => filterAdminTickets(tickets.value, {
   search: search.value,
   status: statusFilter.value,
   issueType: issueFilter.value,
   priority: priorityFilter.value,
+  dateFrom: dateFrom.value,
+  dateTo: dateTo.value,
 }))
-const kpis = computed(() => calculateAdminTicketKpis(mockAdminTickets))
-const selectedTicket = computed(() => mockAdminTickets.find((ticket) => ticket.id === selectedTicketId.value) ?? null)
-const issueTypes = computed(() => [...new Set(mockAdminTickets.map((ticket) => ticket.issueType))])
-const today = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+const kpis = computed(() => calculateAdminTicketKpis(tickets.value))
+const selectedTicket = computed(() => adminTicketsMode === 'mock'
+  ? tickets.value.find((ticket) => ticket.id === selectedTicketId.value) ?? null
+  : ticketDetail.value)
+const issueTypes = computed(() => [...new Set(tickets.value.map((ticket) => ticket.issueType).filter(Boolean))])
+const hasFilters = computed(() => Boolean(search.value || statusFilter.value || issueFilter.value || priorityFilter.value || dateFrom.value || dateTo.value))
 
 watch(visibleTickets, (tickets) => {
   if (!tickets.some((ticket) => ticket.id === selectedTicketId.value)) {
@@ -33,9 +55,83 @@ watch(visibleTickets, (tickets) => {
   }
 })
 
+let detailController: AbortController | null = null
+async function loadTicketDetail(ticketId: string, fallback: AdminTicket) {
+  detailController?.abort()
+  const controller = new AbortController()
+  detailController = controller
+  ticketDetail.value = null
+  detailWarnings.value = []
+  detailError.value = ''
+  detailStatus.value = 'loading'
+  try {
+    const detail = await fetchAdminTicketDetail(ticketId, fallback, controller.signal)
+    if (controller.signal.aborted || detailController !== controller) return
+    ticketDetail.value = detail.ticket
+    detailWarnings.value = detail.warnings
+    detailStatus.value = 'ready'
+  } catch (cause) {
+    if (controller.signal.aborted || detailController !== controller) return
+    if (cause instanceof AdminTicketDetailNotFoundError) {
+      detailStatus.value = 'not-found'
+    } else {
+      detailError.value = cause instanceof Error ? cause.message : '讀取工單詳情時發生錯誤，請稍後重試。'
+      detailStatus.value = 'error'
+    }
+  }
+}
+
+watch(
+  () => [selectedTicketId.value, tickets.value.find((ticket) => ticket.id === selectedTicketId.value)] as const,
+  ([ticketId, fallback]) => {
+    if (adminTicketsMode !== 'api') return
+    detailController?.abort()
+    detailController = null
+    ticketDetail.value = null
+    detailWarnings.value = []
+    detailError.value = ''
+    if (!ticketId || !fallback) {
+      detailStatus.value = 'idle'
+      return
+    }
+    void loadTicketDetail(ticketId, fallback)
+  },
+)
+
+async function loadTickets() {
+  if (adminTicketsMode === 'mock') return
+  loadStatus.value = 'loading'
+  loadError.value = ''
+  try {
+    tickets.value = await fetchAdminTickets()
+    loadStatus.value = 'ready'
+  } catch (cause) {
+    loadError.value = cause instanceof Error ? cause.message : '讀取工單時發生錯誤，請稍後重試。'
+    loadStatus.value = 'error'
+  }
+}
+
+onMounted(() => { void loadTickets() })
+
+onBeforeUnmount(() => { detailController?.abort() })
+
+function retrySelectedDetail() {
+  const fallback = tickets.value.find((ticket) => ticket.id === selectedTicketId.value)
+  if (selectedTicketId.value && fallback) void loadTicketDetail(selectedTicketId.value, fallback)
+}
+
 function logout() {
   clearAdminAuthentication()
   void router.push('/admin/login')
+}
+
+function resetFilters() {
+  search.value = ''
+  statusFilter.value = ''
+  issueFilter.value = ''
+  priorityFilter.value = ''
+  dateFrom.value = ''
+  dateTo.value = ''
 }
 </script>
 
@@ -82,23 +178,42 @@ function logout() {
         <section class="admin-filters" aria-label="工單篩選">
           <label class="admin-filter-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="搜尋工單編號、顧客姓名或訂單號..." aria-label="搜尋工單編號、顧客姓名或訂單號" /></label>
           <select v-model="statusFilter" aria-label="工單狀態">
-            <option value="">全部狀態</option><option value="pending">待審核</option><option value="processing">處理中</option><option value="needs-info">要求補件</option><option value="closed">已結案</option>
+            <option value="">全部狀態</option>
+            <option value="received">已受理</option><option value="under_review">審核中</option><option value="assigned">已分派</option>
+            <option value="processing">處理中</option><option value="waiting_customer">待補充資料</option><option value="closed">已結案</option>
+            <!-- <option value="unknown">未知狀態</option> -->
           </select>
           <select v-model="issueFilter" aria-label="問題類型">
-            <option value="">全部問題類型</option><option v-for="issue in issueTypes" :key="issue" :value="issue">{{ issue }}</option>
+            <option value="">全部問題類型</option><option v-for="issue in issueTypes" :key="issue" :value="issue">{{ getIssueTypeLabel(issue) }}</option>
           </select>
           <select v-model="priorityFilter" aria-label="工單優先級">
             <option value="">全部優先級</option><option value="high">優先級：高</option><option value="medium">優先級：中</option><option value="low">優先級：低</option>
           </select>
-          <span class="admin-date-range">▣　{{ today }}</span>
+          <label class="admin-date-filter"><span>建立日期</span><input v-model="dateFrom" type="date" aria-label="建立日期起" /><span aria-hidden="true">至</span><input v-model="dateTo" type="date" aria-label="建立日期迄" /></label>
+          <button v-if="hasFilters" class="admin-reset-filters" type="button" @click="resetFilters">清除篩選</button>
           <button class="admin-export-button" type="button" disabled title="Mock 展示版不提供匯出">⇩　匯出 CSV</button>
         </section>
 
         <section class="admin-workspace">
-          <AdminTicketQueue :tickets="visibleTickets" :selected-ticket-id="selectedTicketId ?? ''" :total-tickets="mockAdminTickets.length" @select="selectedTicketId = $event" />
-          <AdminTicketDetails :ticket="selectedTicket" />
+          <AdminTicketQueue
+            :tickets="visibleTickets"
+            :selected-ticket-id="selectedTicketId ?? ''"
+            :total-tickets="tickets.length"
+            :load-status="loadStatus"
+            :load-error="loadError"
+            :show-refresh="adminTicketsMode === 'api'"
+            @select="selectedTicketId = $event"
+            @refresh="loadTickets"
+          />
+          <AdminTicketDetails
+            :ticket="selectedTicket"
+            :detail-status="detailStatus"
+            :detail-error="detailError"
+            :detail-warnings="detailWarnings"
+            @retry="retrySelectedDetail"
+          />
         </section>
-        <p class="admin-demo-notice">Mock 展示資料｜所有覆核與處置功能目前停用，不會修改工單。</p>
+        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜所有覆核與處置功能目前停用，不會修改工單。' : 'API 工單列表與詳情｜人工覆核與處置功能尚未開放。' }}</p>
       </main>
     </div>
   </div>

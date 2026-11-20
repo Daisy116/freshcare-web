@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import type { AdminTicket, AdminTicketStatus } from '@/types/adminTicket'
+import type { AdminTicket, AdminTicketDetailStatus } from '@/types/adminTicket'
+import { getReviewStatusLabel, getTicketStatusLabel } from '@/utils/ticketStatus'
+import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 
-defineProps<{ ticket: AdminTicket | null }>()
-
-const statusLabels: Record<AdminTicketStatus, string> = {
-  pending: '待審核',
-  processing: '處理中',
-  'needs-info': '要求補件',
-  closed: '已結案',
-}
+defineProps<{
+  ticket: AdminTicket | null
+  detailStatus?: AdminTicketDetailStatus
+  detailError?: string
+  detailWarnings?: string[]
+}>()
+defineEmits<{ retry: [] }>()
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-TW', {
@@ -23,19 +24,35 @@ function formatDate(value: string): string {
 </script>
 
 <template>
-  <aside v-if="ticket" class="admin-ticket-details">
+  <aside v-if="detailStatus === 'loading'" class="admin-ticket-details admin-detail-empty" role="status" aria-live="polite">
+    <span aria-hidden="true">◌</span><h2>正在載入工單詳情</h2><p>正在取得顧客資料、案件內容與處理歷程…</p>
+  </aside>
+  <aside v-else-if="detailStatus === 'not-found'" class="admin-ticket-details admin-detail-empty" role="status">
+    <span aria-hidden="true">▣</span><h2>查無工單詳情</h2><p>此工單可能已不存在或無法提供詳情。</p>
+    <button class="admin-detail-retry" type="button" @click="$emit('retry')">重新載入</button>
+  </aside>
+  <aside v-else-if="detailStatus === 'error'" class="admin-ticket-details admin-detail-empty" role="alert">
+    <span aria-hidden="true">!</span><h2>工單詳情載入失敗</h2><p>{{ detailError || '讀取詳情時發生錯誤，請稍後重試。' }}</p>
+    <button class="admin-detail-retry" type="button" @click="$emit('retry')">重試</button>
+  </aside>
+  <aside v-else-if="ticket" class="admin-ticket-details">
     <header class="admin-detail-heading">
-      <div><span class="admin-status-chip" :class="`status-${ticket.status}`">{{ statusLabels[ticket.status] }}</span><span class="admin-detail-channel">反映管道：{{ ticket.channel }}</span></div>
+      <div><span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span><span v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</span><span class="admin-detail-channel">購買管道：{{ ticket.channel }}</span></div>
       <h2>{{ ticket.id }}</h2>
     </header>
 
+    <ul v-if="detailWarnings?.length" class="admin-detail-warnings" aria-label="工單資料提醒">
+      <li v-for="(warning, index) in detailWarnings" :key="`${index}-${warning}`">⚠ {{ warning }}</li>
+    </ul>
+
     <section class="admin-customer-card">
-      <div class="admin-customer-name"><strong>{{ ticket.customerName }}</strong><span>顧客姓名</span><a :href="`tel:${ticket.phone}`">☎ {{ ticket.phone }}</a></div>
+      <div class="admin-customer-name"><strong>{{ ticket.customerName || '未提供姓名' }}</strong><span>顧客姓名</span><a v-if="ticket.phone" :href="`tel:${ticket.phone}`">☎ {{ ticket.phone }}</a><span v-if="ticket.email">{{ ticket.email }}</span></div>
       <dl class="admin-ticket-meta">
-        <div><dt>訂單編號</dt><dd>{{ ticket.orderNumber }}</dd></div>
+        <div v-if="ticket.orderNumber"><dt>訂單編號</dt><dd>{{ ticket.orderNumber }}</dd></div>
         <div><dt>反映時間</dt><dd>{{ formatDate(ticket.createdAt) }}</dd></div>
-        <div><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
-        <div><dt>問題類型</dt><dd>{{ ticket.issueType }}</dd></div>
+        <div v-if="ticket.product"><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
+        <div v-if="ticket.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(ticket.issueType) }}</dd></div>
+        <div v-if="ticket.reviewStatus"><dt>審核狀態</dt><dd>{{ getReviewStatusLabel(ticket.reviewStatus) }}<span v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 狀態待確認</span></dd></div>
       </dl>
       <div class="admin-customer-description"><strong>顧客描述</strong><p>「{{ ticket.description }}」</p></div>
     </section>
@@ -69,12 +86,13 @@ function formatDate(value: string): string {
 
     <section class="admin-history">
       <header><h3>◷ 工單處理歷程</h3><span>共 {{ ticket.events.length }} 筆</span></header>
-      <ol>
+      <ol v-if="ticket.events.length">
         <li v-for="event in ticket.events" :key="event.id" :class="{ 'event-pending': !event.complete }">
           <span class="admin-history-dot"></span>
           <div><time v-if="event.timestamp">{{ formatDate(event.timestamp) }} · {{ event.title }}</time><strong v-else>當前進度：{{ event.title }}</strong><p>{{ event.description }}</p></div>
         </li>
       </ol>
+      <p v-else class="admin-detail-no-events">目前尚無處理事件。</p>
     </section>
   </aside>
   <aside v-else class="admin-ticket-details admin-detail-empty"><span aria-hidden="true">▣</span><h2>選取工單以檢視詳情</h2><p>請從左側佇列選擇一筆工單。</p></aside>

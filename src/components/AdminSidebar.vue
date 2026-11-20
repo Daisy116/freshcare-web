@@ -22,7 +22,6 @@ defineEmits<{ close: []; logout: [] }>()
       </div>
     </div>
     <div class="admin-sidebar-footer">
-      <p>Mock 展示資料<br>不會修改真實案件</p>
       <button class="admin-sidebar-logout" type="button" @click="$emit('logout')"><span aria-hidden="true">↪</span>登出</button>
     </div>
   </aside>

@@ -1,5 +1,10 @@
 import type { SubmittedTicket, TicketForm, TicketLookupApiEvent, TicketLookupApiTicket, TicketLookupResult, TicketStatus, TicketSubmissionResponse } from '@/types/ticket'
-import { getReviewStatusLabel, getTicketStatusLabel } from '@/utils/ticketStatus'
+import {
+  getReviewStatusLabel,
+  getTicketStatusLabel,
+  isKnownReviewStatus,
+  isKnownTicketStatus,
+} from '@/utils/ticketStatus'
 
 const mockTickets = new Map<string, { email: string; status: TicketStatus }>()
 const configuredMode = import.meta.env.VITE_TICKET_API_MODE ?? 'mock'
@@ -121,6 +126,7 @@ function parseTicketStatus(value: unknown): TicketStatus {
   return {
     ticketNumber: ticket.ticket_id,
     status: getTicketStatusLabel(ticket.ticket_status),
+    ...(!isKnownTicketStatus(ticket.ticket_status) ? { statusWarning: true } : {}),
     submittedAt: ticket.created_at,
     timeline,
     ...(typeof ticket.product_name === 'string' ? { productName: ticket.product_name } : {}),
@@ -128,6 +134,9 @@ function parseTicketStatus(value: unknown): TicketStatus {
     ...(typeof ticket.issue_type === 'string' ? { issueType: ticket.issue_type } : {}),
     ...(typeof ticket.order_number === 'string' ? { orderNumber: ticket.order_number } : {}),
     ...(typeof ticket.review_status === 'string' ? { reviewStatus: getReviewStatusLabel(ticket.review_status) } : {}),
+    ...(typeof ticket.review_status === 'string' && !isKnownReviewStatus(ticket.review_status)
+      ? { reviewStatusWarning: true }
+      : {}),
     ...(ticket.closed_at !== undefined ? { closedAt: ticket.closed_at } : {}),
   }
 }

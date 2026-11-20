@@ -5,6 +5,7 @@ import FormInput from '@/components/FormInput.vue'
 import StatusTimeline from '@/components/StatusTimeline.vue'
 import { getTicketStatus, ticketSubmissionMode } from '@/services/ticketService'
 import type { TicketStatus } from '@/types/ticket'
+import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 
 const route = useRoute()
 const ticketNumber = ref(typeof route.query.ticket === 'string' ? route.query.ticket : '')
@@ -59,13 +60,15 @@ async function searchTicket() {
       </section>
       <section v-if="result" class="form-card track-result" aria-live="polite">
         <div class="result-heading"><div><span class="status-badge">● {{ result.status }}</span><h2>{{ result.ticketNumber }}</h2></div><time :datetime="result.submittedAt">提交於 {{ new Date(result.submittedAt).toLocaleString('zh-TW') }}</time></div>
+        <p v-if="result.statusWarning" class="form-notice" role="status">此工單回傳未知狀態，狀態資訊待確認。</p>
         <dl v-if="result.productName || result.productId || result.issueType || result.orderNumber || result.reviewStatus || result.closedAt" class="detail-grid track-ticket-details">
           <div v-if="result.productName || result.productId"><dt>{{ result.productName ? '商品名稱' : '商品編號' }}</dt><dd>{{ result.productName || result.productId }}</dd></div>
-          <div v-if="result.issueType"><dt>問題類型</dt><dd>{{ result.issueType === 'wrong-item' ? '商品錯誤／規格不符或數量短少' : result.issueType }}</dd></div>
+          <div v-if="result.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(result.issueType) }}</dd></div>
           <div v-if="result.orderNumber"><dt>訂單編號</dt><dd>{{ result.orderNumber }}</dd></div>
           <div v-if="result.reviewStatus"><dt>審核狀態</dt><dd>{{ result.reviewStatus }}</dd></div>
           <div v-if="result.closedAt"><dt>結案時間</dt><dd>{{ new Date(result.closedAt).toLocaleString('zh-TW') }}</dd></div>
         </dl>
+        <p v-if="result.reviewStatusWarning" class="form-notice" role="status">此工單回傳未知審核狀態，狀態資訊待確認。</p>
         <StatusTimeline :items="result.timeline" />
       </section>
       <aside v-else class="side-card track-help"><h2>找不到工單編號？</h2><p>提交完成頁會顯示模擬工單編號。此展示版本的工單僅保留於目前瀏覽器工作階段，重新整理後資料即會清除。</p><RouterLink class="text-link" to="/contact">前往問題反映 →</RouterLink></aside>

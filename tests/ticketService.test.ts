@@ -84,14 +84,14 @@ describe('API ticket submission', () => {
       vi.resetModules()
       const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
         ticket_id: 'FC-API-001',
-        ticket_status: '品管審核中',
+        ticket_status: 'under_review',
         created_at: '2026-11-17T12:00:00.000Z',
         product_name: '麝香葡萄',
         issue_type: '品質問題',
         order_number: 'ORDER-123',
         events: [
           { status: '已受理', description: '案件已建立', created_at: '2026-11-17T12:00:00.000Z' },
-          { title: '品管審核中', description: '專員正在確認', timestamp: '', complete: false },
+          { title: 'under_review', description: '專員正在確認', timestamp: '', complete: false },
         ],
       }), { status: 200 }))
       vi.stubGlobal('fetch', fetchMock)
@@ -112,14 +112,14 @@ describe('API ticket submission', () => {
         kind: 'found',
         ticket: {
           ticketNumber: 'FC-API-001',
-          status: '品管審核中',
+          status: '審核中',
           submittedAt: '2026-11-17T12:00:00.000Z',
           productName: '麝香葡萄',
           issueType: '品質問題',
           orderNumber: 'ORDER-123',
           timeline: [
             { title: '已受理', description: '案件已建立', timestamp: '2026-11-17T12:00:00.000Z', complete: true },
-            { title: '品管審核中', description: '專員正在確認', timestamp: '', complete: false },
+            { title: '審核中', description: '專員正在確認', timestamp: '', complete: false },
           ],
         },
       })

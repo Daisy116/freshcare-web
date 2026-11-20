@@ -79,6 +79,7 @@ export interface TicketLookupApiResponse {
 export interface TicketStatus {
   ticketNumber: string
   status: string
+  statusWarning?: boolean
   submittedAt: string
   timeline: TicketTimelineItem[]
   productName?: string
@@ -86,6 +87,7 @@ export interface TicketStatus {
   issueType?: string
   orderNumber?: string
   reviewStatus?: string
+  reviewStatusWarning?: boolean
   closedAt?: string | null
 }
 

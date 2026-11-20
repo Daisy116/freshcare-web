@@ -1,19 +1,17 @@
 <script setup lang="ts">
-import type { AdminTicket, AdminTicketStatus } from '@/types/adminTicket'
+import type { AdminTicket } from '@/types/adminTicket'
+import { getReviewStatusLabel, getTicketStatusLabel } from '@/utils/ticketStatus'
+import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 
 defineProps<{
   tickets: AdminTicket[]
   selectedTicketId: string
   totalTickets: number
+  loadStatus: 'loading' | 'ready' | 'error'
+  loadError: string
+  showRefresh: boolean
 }>()
-defineEmits<{ select: [ticketId: string] }>()
-
-const statusLabels: Record<AdminTicketStatus, string> = {
-  pending: '待審核',
-  processing: '處理中',
-  'needs-info': '要求補件',
-  closed: '已結案',
-}
+defineEmits<{ select: [ticketId: string]; refresh: [] }>()
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value))
@@ -23,26 +21,33 @@ function formatDate(value: string): string {
 <template>
   <section class="admin-queue">
     <header class="admin-queue-heading">
-      <div><h2>即時工單佇列</h2><span>{{ tickets.length }} 筆符合</span></div>
-      <small>最後更新 {{ new Date().toLocaleTimeString('zh-TW', { hour12: false }) }}</small>
+      <div><h2>工單列表</h2><span>{{ tickets.length }} 筆符合</span></div>
+      <div class="admin-queue-tools"><small>最後更新 {{ new Date().toLocaleTimeString('zh-TW', { hour12: false }) }}</small><button v-if="showRefresh" type="button" aria-label="重新整理工單" :disabled="loadStatus === 'loading'" @click="$emit('refresh')">↻ 重新整理</button></div>
     </header>
     <div class="admin-queue-scroll">
       <table class="admin-ticket-table">
-        <thead><tr><th>工單資訊 / 顧客姓名</th><th>商品名稱 / 問題類型</th><th>AI 建議部門</th><th>工單狀態</th><th>建立時間</th></tr></thead>
+        <thead><tr><th>工單編號</th><th>商品名稱 / 問題類型</th><th>AI 建議部門</th><th>工單狀態</th><th>建立時間</th></tr></thead>
         <tbody>
           <tr v-for="ticket in tickets" :key="ticket.id" :class="{ selected: ticket.id === selectedTicketId }" :aria-selected="ticket.id === selectedTicketId" tabindex="0" @click="$emit('select', ticket.id)" @keydown.enter="$emit('select', ticket.id)" @keydown.space.prevent="$emit('select', ticket.id)">
             <td><strong>{{ ticket.id }}</strong><span>{{ ticket.customerName }}</span></td>
-            <td><strong>{{ ticket.product }}</strong><span :class="{ 'admin-ticket-issue-alert': ticket.priority === 'high' }">{{ ticket.issueType }}</span></td>
-            <td><strong>{{ ticket.aiSuggestion?.department ?? '等待 AI 分析中...' }}</strong><span>優先級：{{ ticket.priority === 'high' ? '高' : ticket.priority === 'medium' ? '中' : '低' }}</span></td>
-            <td><span class="admin-status-chip" :class="`status-${ticket.status}`">{{ statusLabels[ticket.status] }}</span></td>
-            <td class="admin-ticket-date">{{ formatDate(ticket.createdAt) }}<span v-if="ticket.id === selectedTicketId">查看中</span></td>
+            <td><strong>{{ ticket.product }}</strong><span :class="{ 'admin-ticket-issue-alert': ticket.priority === 'high' }">{{ getIssueTypeLabel(ticket.issueType) }}</span></td>
+            <td><strong>{{ ticket.aiSuggestion?.department || '等待 AI 分析' }}</strong><span>優先級：{{ ticket.priority === 'high' ? '高' : ticket.priority === 'medium' ? '中' : '低' }}</span></td>
+            <td>
+              <span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span>
+              <small v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</small>
+              <small v-if="ticket.reviewStatus" class="admin-review-status">{{ getReviewStatusLabel(ticket.reviewStatus) }}</small>
+              <small v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 審核狀態待確認</small>
+            </td>
+            <td class="admin-ticket-date">{{ formatDate(ticket.createdAt) }}</td>
           </tr>
-          <tr v-if="tickets.length === 0"><td class="admin-empty-row" colspan="5">沒有符合篩選條件的工單</td></tr>
+          <tr v-if="loadStatus === 'loading'"><td class="admin-empty-row" colspan="5" role="status">正在載入工單資料…</td></tr>
+          <tr v-else-if="loadStatus === 'error'"><td class="admin-empty-row admin-load-error" colspan="5" role="alert">{{ loadError }}<button type="button" @click="$emit('refresh')">重試</button></td></tr>
+          <tr v-else-if="tickets.length === 0"><td class="admin-empty-row" colspan="5">{{ totalTickets === 0 ? '目前尚無工單資料' : '沒有符合篩選條件的工單' }}</td></tr>
         </tbody>
       </table>
     </div>
     <footer class="admin-queue-footer">
-      <span>顯示 {{ tickets.length }} 筆，共 {{ totalTickets }} 筆 Mock 工單</span>
+      <span>顯示 {{ tickets.length }} 筆，共 {{ totalTickets }} 筆工單{{ loadStatus === 'ready' ? '' : ' · ' + (loadStatus === 'loading' ? '載入中' : '載入失敗') }}</span>
       <span class="admin-page-indicator">1 / 1</span>
     </footer>
   </section>

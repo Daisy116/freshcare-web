@@ -74,11 +74,13 @@ GitHub Pages 建置時不論環境變數設定為何，一律使用 Mock 提交�
 
 ## 內部後台登入
 
-`/#/admin/login` 使用 `src/services/adminAuthService.ts` 驗證登入，成功後進入 `/#/admin/dashboard`。後台提供 Stitch 儀表板版型、工單佇列搜尋／篩選、動態 Mock KPI、工單詳情與事件歷程；AI 建議只展示 Mock 結果，未分析案件會顯示等待狀態。人工覆核、改部門、要求補件及結案功能為停用展示按鈕，不會改動資料。
+`/#/admin/login` 使用 `src/services/adminAuthService.ts` 驗證登入，成功後進入 `/#/admin/dashboard`。後台提供 Stitch 儀表板版型、工單佇列搜尋／篩選、依工單資料動態計算的 KPI、工單詳情與事件歷程；未分析案件顯示「等待 AI 分析」。人工覆核、改部門、要求補件及結案功能為停用展示按鈕，不會改動資料。
 
 本機 `.env.development` 設定 `VITE_ADMIN_AUTH_MODE=api`；頁面以 `POST /api/admin/login` 傳送 HTTP Basic `Authorization` 標頭，由 Vite 代理到 `http://localhost:5678/webhook/freshcare/admin/login`。請先啟動本機 n8n 並啟用該 Webhook；帳密只在登入頁記憶體及 Service 模組記憶體中短暫存在，頁面重新整理即登出，登入成功後清空表單。
 
 共用 `adminApiFetch('/api/admin/...')` 會附上登入時使用的相同 Basic Authorization，未登入時拒絕發出管理 API 請求。正式建置（包括 GitHub Pages）一律強制 Mock，不連線登入 API；Mock 模式任意非空帳密即可進入展示頁，沒有身分驗證或資料存取保護。不得將正式帳密或 API Secret 寫入前端程式碼或環境變數。正式部署仍須搭配可信任後端與適當工作階段／權限保護；純前端記憶體驗證不能保護後端資源。
+
+後台工單列表本機預設由 `.env.development` 的 `VITE_ADMIN_TICKETS_MODE=api` 啟用，使用 `GET /api/admin/tickets` 並由 Vite 代理至 `http://localhost:5678/webhook/freshcare/admin/tickets`；請先以 API 模式登入，列表請求會沿用同一 Basic Authorization。回應格式為 `{ success: true, count, tickets }`。設定 `VITE_ADMIN_TICKETS_MODE=mock` 可切回列表 Mock；正式建置強制使用 Mock。此階段僅接入列表與 KPI，API 模式下右側詳情會明確顯示尚未串接，不會混入 Mock 顧客資料。
 
 ## 安全與資料管理
 

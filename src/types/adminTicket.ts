@@ -1,4 +1,14 @@
-export type AdminTicketStatus = 'pending' | 'processing' | 'needs-info' | 'closed'
+export type AdminTicketStatus =
+  | 'received'
+  | 'under_review'
+  | 'assigned'
+  | 'processing'
+  | 'waiting_customer'
+  | 'closed'
+  | 'pending'
+  | 'needs-info'
+  | 'unknown'
+export type AdminReviewStatus = 'pending' | 'approved' | 'modified' | 'returned' | 'unknown'
 export type AdminTicketPriority = 'high' | 'medium' | 'low'
 
 export interface AdminTicketEvent {
@@ -28,6 +38,9 @@ export interface AdminTicket {
   department: string
   priority: AdminTicketPriority
   status: AdminTicketStatus
+  statusWarning?: string
+  reviewStatus?: AdminReviewStatus
+  reviewStatusWarning?: string
   createdAt: string
   updatedAt: string
   closedAt: string | null
@@ -37,11 +50,20 @@ export interface AdminTicket {
   events: AdminTicketEvent[]
 }
 
+export interface AdminTicketDetail {
+  ticket: AdminTicket
+  warnings: string[]
+}
+
+export type AdminTicketDetailStatus = 'idle' | 'loading' | 'ready' | 'error' | 'not-found'
+
 export interface AdminTicketFilters {
   search: string
   status: AdminTicketStatus | ''
   issueType: string
   priority: AdminTicketPriority | ''
+  dateFrom?: string
+  dateTo?: string
 }
 
 export interface AdminTicketKpis {
@@ -50,4 +72,17 @@ export interface AdminTicketKpis {
   closedToday: number
   total: number
   closedRate: number
+}
+
+export interface AdminTicketsApiResponse {
+  success: true
+  count: number
+  tickets: AdminTicketApiRecord[]
+}
+
+export interface AdminTicketApiRecord {
+  ticket_id: string
+  ticket_status: string
+  created_at: string
+  [key: string]: unknown
 }
