@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminTicketDetails from '@/components/AdminTicketDetails.vue'
@@ -14,9 +14,11 @@ import {
   fetchAdminTickets,
   filterAdminTickets,
   mockAdminTickets,
+  startAdminTicketReview,
 } from '@/services/adminTicketService'
 import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus } from '@/types/adminTicket'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
+import { getTicketStatusLabel } from '@/utils/ticketStatus'
 
 const router = useRouter()
 const search = ref('')
@@ -31,6 +33,9 @@ const ticketDetail = ref<AdminTicket | null>(null)
 const detailStatus = ref<AdminTicketDetailStatus>('idle')
 const detailError = ref('')
 const detailWarnings = ref<string[]>([])
+const reviewLoading = ref(false)
+const reviewError = ref('')
+const preserveSelectedTicketId = ref<string | null>(null)
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(true)
 const loadStatus = ref<'loading' | 'ready' | 'error'>(adminTicketsMode === 'api' ? 'loading' : 'ready')
@@ -52,9 +57,11 @@ const selectedTicket = computed(() => adminTicketsMode === 'mock'
 const issueTypes = computed(() => [...new Set(tickets.value.map((ticket) => ticket.issueType).filter(Boolean))])
 const hasFilters = computed(() => Boolean(search.value || statusFilter.value || issueFilter.value || priorityFilter.value || dateFrom.value || dateTo.value))
 
-watch(visibleTickets, (tickets) => {
-  if (!tickets.some((ticket) => ticket.id === selectedTicketId.value)) {
-    selectedTicketId.value = tickets[0]?.id ?? null
+watch(visibleTickets, (visible) => {
+  if (!visible.some((ticket) => ticket.id === selectedTicketId.value)) {
+    if (preserveSelectedTicketId.value === selectedTicketId.value
+      && tickets.value.some((ticket) => ticket.id === preserveSelectedTicketId.value)) return
+    selectedTicketId.value = visible[0]?.id ?? null
   }
 })
 
@@ -66,6 +73,7 @@ async function loadTicketDetail(ticketId: string, fallback: AdminTicket) {
   ticketDetail.value = null
   detailWarnings.value = []
   detailError.value = ''
+  reviewError.value = ''
   detailStatus.value = 'loading'
   try {
     const detail = await fetchAdminTicketDetail(ticketId, fallback, controller.signal)
@@ -85,14 +93,15 @@ async function loadTicketDetail(ticketId: string, fallback: AdminTicket) {
 }
 
 watch(
-  () => [selectedTicketId.value, tickets.value.find((ticket) => ticket.id === selectedTicketId.value)] as const,
-  ([ticketId, fallback]) => {
+  () => selectedTicketId.value,
+  (ticketId) => {
     if (adminTicketsMode !== 'api') return
     detailController?.abort()
     detailController = null
     ticketDetail.value = null
     detailWarnings.value = []
     detailError.value = ''
+    const fallback = tickets.value.find((ticket) => ticket.id === ticketId)
     if (!ticketId || !fallback) {
       detailStatus.value = 'idle'
       return
@@ -101,16 +110,24 @@ watch(
   },
 )
 
-async function loadTickets() {
-  if (adminTicketsMode === 'mock') return
+async function loadTickets(): Promise<AdminTicket[] | null> {
+  if (adminTicketsMode === 'mock') return null
   loadStatus.value = 'loading'
   loadError.value = ''
+  const selectedTicketIdBeforeRefresh = selectedTicketId.value
   try {
     tickets.value = await fetchAdminTickets()
     loadStatus.value = 'ready'
+    await nextTick()
+    if (selectedTicketIdBeforeRefresh && selectedTicketId.value === selectedTicketIdBeforeRefresh) {
+      const fallback = tickets.value.find((ticket) => ticket.id === selectedTicketIdBeforeRefresh)
+      if (fallback) await loadTicketDetail(selectedTicketIdBeforeRefresh, fallback)
+    }
+    return tickets.value
   } catch (cause) {
     loadError.value = cause instanceof Error ? cause.message : '讀取工單時發生錯誤，請稍後重試。'
     loadStatus.value = 'error'
+    return null
   }
 }
 
@@ -121,6 +138,40 @@ onBeforeUnmount(() => { detailController?.abort() })
 function retrySelectedDetail() {
   const fallback = tickets.value.find((ticket) => ticket.id === selectedTicketId.value)
   if (selectedTicketId.value && fallback) void loadTicketDetail(selectedTicketId.value, fallback)
+}
+
+async function beginTicketReview() {
+  const ticketId = selectedTicketId.value
+  const ticket = tickets.value.find((item) => item.id === ticketId)
+  if (!ticketId || ticket?.status !== 'received' || reviewLoading.value) return
+  if (adminTicketsMode !== 'api') {
+    reviewError.value = 'Mock 模式不會呼叫審核 API，也不會修改展示資料。'
+    return
+  }
+
+  reviewLoading.value = true
+  reviewError.value = ''
+  try {
+    await startAdminTicketReview(ticketId)
+    preserveSelectedTicketId.value = ticketId
+    const refreshedTickets = await loadTickets()
+    if (!refreshedTickets) {
+      reviewError.value = `審核請求已回應 HTTP 200，但重新載入工單列表失敗：${loadError.value}`
+    } else {
+      const refreshedTicket = refreshedTickets.find((item) => item.id === ticketId)
+      if (!refreshedTicket) {
+        reviewError.value = '審核請求已回應 HTTP 200，但最新工單列表中找不到此工單。'
+      } else if (refreshedTicket.status !== 'under_review') {
+        reviewError.value = `審核請求已回應 HTTP 200，但最新狀態為「${getTicketStatusLabel(refreshedTicket.status)}」，尚未確認為審核中。`
+      }
+    }
+  } catch (cause) {
+    reviewError.value = cause instanceof Error ? cause.message : '開始審核時發生錯誤，請稍後重試。'
+  } finally {
+    await nextTick()
+    preserveSelectedTicketId.value = null
+    reviewLoading.value = false
+  }
 }
 
 function logout() {
@@ -237,7 +288,10 @@ function resetFilters() {
             :detail-status="detailStatus"
             :detail-error="detailError"
             :detail-warnings="detailWarnings"
+            :review-loading="reviewLoading"
+            :review-error="reviewError"
             @retry="retrySelectedDetail"
+            @start-review="beginTicketReview"
           />
         </section>
         <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜所有覆核與處置功能目前停用，不會修改工單。' : 'API 工單列表與詳情｜人工覆核與處置功能尚未開放。' }}</p>

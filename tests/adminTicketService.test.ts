@@ -103,6 +103,38 @@ describe('admin mock ticket data', () => {
       expect(calculateAdminTicketKpis(tickets)).toMatchObject({ total: 2, closedRate: 50 })
     })
 
+    it('posts the selected ticket to start review and reports workflow HTTP errors', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { startAdminTicketReview } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }))
+      await expect(startAdminTicketReview('CS-REVIEW-001')).resolves.toBeUndefined()
+      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      expect(url).toBe('/api/admin/tickets/start-review')
+      expect(options.method).toBe('POST')
+      expect(options.body).toBe(JSON.stringify({ ticket_id: 'CS-REVIEW-001' }))
+      expect(new Headers(options.headers).get('Content-Type')).toBe('application/json')
+      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+
+      const errors = new Map([
+        [400, '工單資料不完整或目前無法開始審核'],
+        [404, '找不到此工單'],
+        [409, '此工單狀態已變更'],
+        [500, '工單審核服務發生錯誤'],
+      ])
+      for (const [status, message] of errors) {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status }))
+        await expect(startAdminTicketReview('CS-REVIEW-001')).rejects.toThrow(message)
+      }
+    })
+
     it('rejects invalid counts and malformed tickets', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')

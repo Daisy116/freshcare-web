@@ -30,7 +30,7 @@ describe('admin dashboard', () => {
     expect(wrapper.text()).toContain('林書豪')
     expect(wrapper.text()).toContain('等待 AI 分析')
     expect(wrapper.text()).toContain('等待 AI 分析')
-    expect(wrapper.find('.admin-approve-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.admin-approve-button').exists()).toBe(false)
     expect(wrapper.findAll('.admin-disabled-actions button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })
 

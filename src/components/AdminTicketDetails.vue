@@ -8,8 +8,10 @@ defineProps<{
   detailStatus?: AdminTicketDetailStatus
   detailError?: string
   detailWarnings?: string[]
+  reviewLoading?: boolean
+  reviewError?: string
 }>()
-defineEmits<{ retry: [] }>()
+defineEmits<{ retry: []; startReview: [] }>()
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-TW', {
@@ -36,56 +38,73 @@ function formatDate(value: string): string {
     <button class="admin-detail-retry" type="button" @click="$emit('retry')">重試</button>
   </aside>
   <aside v-else-if="ticket" class="admin-ticket-details">
-    <header class="admin-detail-heading">
-      <div><span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span><span v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</span><span class="admin-detail-channel">購買管道：{{ ticket.channel }}</span></div>
-      <h2>{{ ticket.id }}</h2>
-    </header>
+    <section class="admin-detail-card admin-customer-section">
+      <header class="admin-detail-heading">
+        <div class="admin-detail-card-title">
+          <h3>顧客工單資訊</h3>
+          <span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span>
+          <span v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</span>
+        </div>
+        <h2>{{ ticket.id }}</h2>
+        <span class="admin-detail-channel">購買管道：{{ ticket.channel }}</span>
+      </header>
 
-    <ul v-if="detailWarnings?.length" class="admin-detail-warnings" aria-label="工單資料提醒">
-      <li v-for="(warning, index) in detailWarnings" :key="`${index}-${warning}`">⚠ {{ warning }}</li>
-    </ul>
+      <ul v-if="detailWarnings?.length" class="admin-detail-warnings" aria-label="工單資料提醒">
+        <li v-for="(warning, index) in detailWarnings" :key="`${index}-${warning}`">⚠ {{ warning }}</li>
+      </ul>
 
-    <section class="admin-customer-card">
-      <div class="admin-customer-name"><strong>{{ ticket.customerName || '未提供姓名' }}</strong><span>顧客姓名</span><a v-if="ticket.phone" :href="`tel:${ticket.phone}`">☎ {{ ticket.phone }}</a><span v-if="ticket.email">{{ ticket.email }}</span></div>
-      <dl class="admin-ticket-meta">
-        <div v-if="ticket.orderNumber"><dt>訂單編號</dt><dd>{{ ticket.orderNumber }}</dd></div>
-        <div><dt>反映時間</dt><dd>{{ formatDate(ticket.createdAt) }}</dd></div>
-        <div v-if="ticket.product"><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
-        <div v-if="ticket.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(ticket.issueType) }}</dd></div>
-        <div v-if="ticket.reviewStatus"><dt>審核狀態</dt><dd>{{ getReviewStatusLabel(ticket.reviewStatus) }}<span v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 狀態待確認</span></dd></div>
-      </dl>
-      <div class="admin-customer-description"><strong>顧客描述</strong><p>「{{ ticket.description }}」</p></div>
-    </section>
-
-    <section class="admin-attachments">
-      <header><h3><span aria-hidden="true">⌁</span>附件檔案</h3><span>{{ ticket.attachments.length ? `${ticket.attachments.length} 個附件` : '未上傳附件' }}</span></header>
-      <ul v-if="ticket.attachments.length"><li v-for="attachment in ticket.attachments" :key="attachment">▧　{{ attachment }}</li></ul>
-      <p v-else class="admin-no-attachments"><span aria-hidden="true">▧</span><span>無附加佐證照片<small>顧客透過線上表單進件時未上傳影像檔案</small></span></p>
-    </section>
-
-    <section class="admin-ai-card">
-      <h3><span aria-hidden="true">✦</span>AI 智能語意分析與分類建議</h3>
-      <template v-if="ticket.aiSuggestion">
-        <div class="admin-ai-row"><span>建議歸屬類別</span><strong>{{ ticket.aiSuggestion.category }}</strong></div>
-        <div class="admin-ai-row"><span>建議負責部門</span><strong>{{ ticket.aiSuggestion.department }}</strong></div>
-        <div class="admin-ai-row"><span>建議處置方向</span><strong>{{ ticket.aiSuggestion.action }}</strong></div>
-      </template>
-      <p v-else class="admin-ai-waiting">等待 AI 分析</p>
-    </section>
-
-    <section class="admin-review">
-      <header><h3>專員審核與處置備註</h3><span>將寫入工單備查歷程</span></header>
-      <textarea disabled aria-label="專員審核備註" placeholder="後續可於此記錄審核與處置備註"></textarea>
-      <button class="admin-approve-button" type="button" disabled>✓　核准並轉為處理中</button>
-      <div class="admin-disabled-actions">
-        <button type="button" disabled>⇄ 修改部門</button>
-        <button type="button" disabled>▧ 要求補件</button>
-        <button type="button" disabled>✓ 結案</button>
+      <div class="admin-customer-card">
+        <div class="admin-customer-name"><strong>{{ ticket.customerName || '未提供姓名' }}</strong><span>顧客姓名</span><a v-if="ticket.phone" :href="`tel:${ticket.phone}`">☎ {{ ticket.phone }}</a><span v-if="ticket.email">{{ ticket.email }}</span></div>
+        <dl class="admin-ticket-meta">
+          <div v-if="ticket.orderNumber"><dt>訂單編號</dt><dd>{{ ticket.orderNumber }}</dd></div>
+          <div><dt>反映時間</dt><dd>{{ formatDate(ticket.createdAt) }}</dd></div>
+          <div v-if="ticket.product"><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
+          <div v-if="ticket.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(ticket.issueType) }}</dd></div>
+          <div v-if="ticket.reviewStatus"><dt>審核狀態</dt><dd>{{ getReviewStatusLabel(ticket.reviewStatus) }}<span v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 狀態待確認</span></dd></div>
+        </dl>
+        <div class="admin-customer-description"><strong>顧客描述</strong><p>「{{ ticket.description }}」</p></div>
       </div>
+
+      <section class="admin-attachments">
+        <header><h4><span aria-hidden="true">⌁</span>附件檔案</h4><span>{{ ticket.attachments.length ? `${ticket.attachments.length} 個附件` : '未上傳附件' }}</span></header>
+        <ul v-if="ticket.attachments.length"><li v-for="attachment in ticket.attachments" :key="attachment">▧　{{ attachment }}</li></ul>
+        <p v-else class="admin-no-attachments"><span aria-hidden="true">▧</span><span>無附加佐證照片<small>顧客透過線上表單進件時未上傳影像檔案</small></span></p>
+      </section>
     </section>
 
-    <section class="admin-history">
-      <header><h3>◷ 工單處理歷程</h3><span>共 {{ ticket.events.length }} 筆</span></header>
+    <section class="admin-detail-card admin-review-card">
+      <header class="admin-detail-section-heading"><h3>AI 分析與專員審核</h3></header>
+      <section class="admin-ai-card">
+        <h4><span aria-hidden="true">✦</span>AI 智能語意分析與分類建議</h4>
+        <template v-if="ticket.aiSuggestion">
+          <div class="admin-ai-row"><span>建議歸屬類別</span><strong>{{ ticket.aiSuggestion.category }}</strong></div>
+          <div class="admin-ai-row"><span>建議負責部門</span><strong>{{ ticket.aiSuggestion.department }}</strong></div>
+          <div class="admin-ai-row"><span>建議處置方向</span><strong>{{ ticket.aiSuggestion.action }}</strong></div>
+        </template>
+        <p v-else class="admin-ai-waiting">等待 AI 分析</p>
+      </section>
+
+      <section class="admin-review">
+        <header><h4>專員審核與處置備註</h4><span>將寫入工單備查歷程</span></header>
+        <textarea disabled aria-label="專員審核備註" placeholder="後續可於此記錄審核與處置備註"></textarea>
+        <button
+          v-if="ticket.status === 'received'"
+          class="admin-approve-button"
+          type="button"
+          :disabled="reviewLoading"
+          @click="$emit('startReview')"
+        >{{ reviewLoading ? '◌　正在開始審核…' : '▶　開始審核' }}</button>
+        <p v-if="reviewError" class="admin-review-error" role="alert">{{ reviewError }}</p>
+        <div class="admin-disabled-actions">
+          <button type="button" disabled>⇄ 修改部門</button>
+          <button type="button" disabled>▧ 要求補件</button>
+          <button type="button" disabled>✓ 結案</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="admin-detail-card admin-history">
+      <header class="admin-detail-section-heading"><h3>◷ 工單處理歷程</h3><span>共 {{ ticket.events.length }} 筆</span></header>
       <ol v-if="ticket.events.length">
         <li v-for="event in ticket.events" :key="event.id" :class="{ 'event-pending': !event.complete }">
           <span class="admin-history-dot"></span>

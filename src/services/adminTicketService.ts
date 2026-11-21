@@ -439,6 +439,30 @@ export async function fetchAdminTickets(): Promise<AdminTicket[]> {
   return parseAdminTicketsResponse(payload)
 }
 
+export async function startAdminTicketReview(ticketId: string): Promise<void> {
+  if (!ticketId.trim()) throw new Error('請先選取要開始審核的工單。')
+
+  let response: Response
+  try {
+    response = await adminApiFetch('/api/admin/tickets/start-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket_id: ticketId }),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === '請先登入後台。') throw error
+    throw new Error('無法連線至工單審核服務，請確認本機 n8n 是否啟動後重試。')
+  }
+
+  if (response.status === 200) return
+  if (response.status === 400) throw new Error('工單資料不完整或目前無法開始審核，請確認工單狀態後重試。（HTTP 400）')
+  if (response.status === 404) throw new Error('找不到此工單，請重新整理工單列表後再試。（HTTP 404）')
+  if (response.status === 409) throw new Error('此工單狀態已變更，無法開始審核；請重新整理工單資料。（HTTP 409）')
+  if (response.status === 500) throw new Error('工單審核服務發生錯誤，請稍後重試。（HTTP 500）')
+  if (response.status === 401) throw new Error('管理員登入已失效，請重新登入。')
+  throw new Error(`開始審核失敗（HTTP ${response.status}），請稍後重試。`)
+}
+
 export function filterAdminTickets(
   tickets: AdminTicket[],
   filters: AdminTicketFilters,
