@@ -367,7 +367,9 @@ export function parseAdminTicketDetailResponse(payload: unknown, fallback: Admin
   const ticketRecord: Record<string, unknown> = {
     ...rawTicket,
     purchase_channel: firstString(rawTicket, ['purchase_channel', 'channel']) ?? fallback.channel,
-    original_message: firstString(contact, ['original_message']) ?? fallback.description,
+    original_message: firstString(contact, ['original_message'])
+      ?? firstString(rawTicket, ['original_message', 'description', 'customer_description', 'content'])
+      ?? fallback.description,
     ticket_id: firstString(rawTicket, ['ticket_id', 'id', 'ticket_number']) ?? fallback.id,
     ticket_status: firstString(rawTicket, ['ticket_status', 'status']) ?? fallback.status,
     created_at: firstString(rawTicket, ['created_at', 'submitted_at', 'createdAt']) ?? fallback.createdAt,

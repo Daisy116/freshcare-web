@@ -5,6 +5,7 @@ import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminTicketDetails from '@/components/AdminTicketDetails.vue'
 import AdminTicketQueue from '@/components/AdminTicketQueue.vue'
 import { clearAdminAuthentication } from '@/services/adminAuthService'
+import AdminFlowGuideModal from '@/components/AdminFlowGuideModal.vue'
 import {
   AdminTicketDetailNotFoundError,
   adminTicketsMode,
@@ -31,8 +32,10 @@ const detailStatus = ref<AdminTicketDetailStatus>('idle')
 const detailError = ref('')
 const detailWarnings = ref<string[]>([])
 const sidebarOpen = ref(false)
+const sidebarCollapsed = ref(true)
 const loadStatus = ref<'loading' | 'ready' | 'error'>(adminTicketsMode === 'api' ? 'loading' : 'ready')
 const loadError = ref('')
+const showFlowGuide = ref(false)
 
 const visibleTickets = computed(() => filterAdminTickets(tickets.value, {
   search: search.value,
@@ -136,11 +139,18 @@ function resetFilters() {
 </script>
 
 <template>
-  <div class="admin-dashboard">
-    <AdminSidebar :open="sidebarOpen" @close="sidebarOpen = false" @logout="logout" />
+  <div class="admin-dashboard" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
+    <AdminSidebar :open="sidebarOpen" :collapsed="sidebarCollapsed" @close="sidebarOpen = false" @logout="logout" @toggle="sidebarCollapsed = !sidebarCollapsed" @open-guide="showFlowGuide = true; sidebarOpen = false" />
     <div class="admin-dashboard-main">
       <header class="admin-topbar">
         <button class="admin-mobile-menu" type="button" aria-label="開啟導覽選單" @click="sidebarOpen = !sidebarOpen">☰</button>
+        <RouterLink class="admin-topbar-brand" to="/admin/dashboard">
+          <span class="admin-sidebar-logo" aria-hidden="true">❧</span>
+          <span class="admin-topbar-brand-text">
+            <strong>FreshCare</strong>
+            <small>品質工單營運系統</small>
+          </span>
+        </RouterLink>
         <nav class="admin-breadcrumb" aria-label="頁面位置"><RouterLink to="/admin/dashboard">後台中心</RouterLink><span>›</span><strong>作業儀表板</strong></nav>
         <label class="admin-global-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="搜尋工單編號 / 顧客 / 訂單..." aria-label="搜尋工單" /></label>
         <div class="admin-topbar-actions">
@@ -148,7 +158,24 @@ function resetFilters() {
           <button type="button" aria-label="說明" disabled>?</button>
         </div>
         <div class="admin-user"><span><strong>內部管理員</strong><small>客服營運部</small></span><i aria-hidden="true">人</i></div>
-        <button class="admin-topbar-logout" type="button" @click="logout"><span aria-hidden="true">↪</span><span>登出</span></button>
+        <button class="admin-topbar-logout" type="button" @click="logout">
+           <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <path d="M16 17l5-5-5-5"/>
+              <path d="M21 12H9"/>
+            </svg>
+          <span>登出</span>
+        </button>
       </header>
 
       <main class="admin-dashboard-content">
@@ -181,7 +208,7 @@ function resetFilters() {
             <option value="">全部狀態</option>
             <option value="received">已受理</option><option value="under_review">審核中</option><option value="assigned">已分派</option>
             <option value="processing">處理中</option><option value="waiting_customer">待補充資料</option><option value="closed">已結案</option>
-            <!-- <option value="unknown">未知狀態</option> -->
+            <option value="pending">待審核（Mock）</option><option value="needs-info">要求補件（Mock）</option><option value="unknown">未知狀態</option>
           </select>
           <select v-model="issueFilter" aria-label="問題類型">
             <option value="">全部問題類型</option><option v-for="issue in issueTypes" :key="issue" :value="issue">{{ getIssueTypeLabel(issue) }}</option>
@@ -216,5 +243,11 @@ function resetFilters() {
         <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜所有覆核與處置功能目前停用，不會修改工單。' : 'API 工單列表與詳情｜人工覆核與處置功能尚未開放。' }}</p>
       </main>
     </div>
+
+    <!-- 工單流程說明 Modal -->
+    <AdminFlowGuideModal
+      :open="showFlowGuide"
+      @close="showFlowGuide = false"
+    />
   </div>
 </template>

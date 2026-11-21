@@ -24,6 +24,7 @@ describe('admin dashboard', () => {
   it('renders mock KPI values and the selected ticket details', () => {
     wrapper = mount(AdminDashboardPage)
 
+    expect(wrapper.get('.admin-dashboard').classes()).toContain('is-sidebar-collapsed')
     expect(wrapper.text()).toContain('今日待審核工單')
     expect(wrapper.text()).toContain('CS-2026-0518-042')
     expect(wrapper.text()).toContain('林書豪')
@@ -31,6 +32,18 @@ describe('admin dashboard', () => {
     expect(wrapper.text()).toContain('等待 AI 分析')
     expect(wrapper.find('.admin-approve-button').attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('.admin-disabled-actions button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+  })
+
+  it('toggles the desktop sidebar collapsed state without persisting it', async () => {
+    wrapper = mount(AdminDashboardPage)
+
+    await wrapper.get('.admin-sidebar-toggle').trigger('click')
+    expect(wrapper.get('.admin-dashboard').classes()).not.toContain('is-sidebar-collapsed')
+    expect(wrapper.get('.admin-sidebar-toggle').attributes('aria-expanded')).toBe('true')
+
+    await wrapper.get('.admin-sidebar-toggle').trigger('click')
+    expect(wrapper.get('.admin-dashboard').classes()).toContain('is-sidebar-collapsed')
+    expect(wrapper.get('.admin-sidebar-toggle').attributes('aria-expanded')).toBe('false')
   })
 
   it('supports searching, filtering and changing the selected ticket', async () => {
