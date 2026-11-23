@@ -59,7 +59,6 @@ function formatDate(value: string): string {
       <header class="admin-detail-heading">
         <div class="admin-detail-card-title">
           <h3>顧客工單資訊</h3>
-          <span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span>
           <span v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</span>
         </div>
         <h2>{{ ticket.id }}</h2>
@@ -77,7 +76,6 @@ function formatDate(value: string): string {
           <div><dt>反映時間</dt><dd>{{ formatDate(ticket.createdAt) }}</dd></div>
           <div v-if="ticket.product"><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
           <div v-if="ticket.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(ticket.issueType) }}</dd></div>
-          <div v-if="ticket.reviewStatus"><dt>審核狀態</dt><dd>{{ getReviewStatusLabel(ticket.reviewStatus) }}<span v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 狀態待確認</span></dd></div>
         </dl>
         <div class="admin-customer-description"><strong>顧客描述</strong><p>「{{ ticket.description }}」</p></div>
       </div>

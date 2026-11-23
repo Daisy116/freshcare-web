@@ -35,7 +35,6 @@ function formatDate(value: string): string {
             <td>
               <span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span>
               <small v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</small>
-              <small v-if="ticket.reviewStatus" class="admin-review-status">{{ getReviewStatusLabel(ticket.reviewStatus) }}</small>
               <small v-if="ticket.reviewStatusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知審核狀態：${ticket.reviewStatusWarning}`">⚠ 審核狀態待確認</small>
             </td>
             <td class="admin-ticket-date">{{ formatDate(ticket.createdAt) }}</td>
