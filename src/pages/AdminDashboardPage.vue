@@ -8,6 +8,7 @@ import { clearAdminAuthentication } from '@/services/adminAuthService'
 import AdminFlowGuideModal from '@/components/AdminFlowGuideModal.vue'
 import {
   AdminTicketDetailNotFoundError,
+  assignAdminTicket,
   adminTicketsMode,
   calculateAdminTicketKpis,
   fetchAdminTicketDetail,
@@ -35,6 +36,9 @@ const detailError = ref('')
 const detailWarnings = ref<string[]>([])
 const reviewLoading = ref(false)
 const reviewError = ref('')
+const assignLoading = ref(false)
+const assignError = ref('')
+const assignSuccess = ref('')
 const preserveSelectedTicketId = ref<string | null>(null)
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(true)
@@ -109,6 +113,8 @@ watch(
     cancelReviewPolling()
     detailController?.abort()
     detailController = null
+    assignError.value = ''
+    assignSuccess.value = ''
     ticketDetail.value = null
     detailWarnings.value = []
     detailError.value = ''
@@ -247,6 +253,49 @@ async function beginTicketReview() {
   }
 }
 
+async function assignSelectedTicket(payload: {
+  ticketId: string
+  reviewDepartment: string
+  reviewNote: string
+}) {
+  if (assignLoading.value) return
+  const ticketId = selectedTicketId.value
+  const ticket = tickets.value.find((item) => item.id === ticketId)
+  if (!ticketId || payload.ticketId !== ticketId || !ticket
+    || !['received', 'under_review'].includes(ticket.status)) {
+    assignError.value = '目前選取的工單狀態不可進行分派，請重新載入工單資料。'
+    return
+  }
+  if (adminTicketsMode !== 'api') {
+    assignError.value = 'Mock 模式不會呼叫分派 API，也不會修改展示資料。'
+    return
+  }
+
+  assignLoading.value = true
+  assignError.value = ''
+  assignSuccess.value = ''
+  preserveSelectedTicketId.value = ticketId
+  try {
+    await assignAdminTicket(ticketId, payload.reviewDepartment, payload.reviewNote)
+    const refreshedTickets = await loadTickets()
+    if (!refreshedTickets) {
+      throw new Error(`分派 API 已成功，但重新載入工單列表失敗：${loadError.value}`)
+    }
+    if (!refreshedTickets.some((item) => item.id === ticketId)) {
+      throw new Error('分派 API 已成功，但最新工單列表中找不到此工單。')
+    }
+    if (detailStatus.value !== 'ready' || ticketDetail.value?.id !== ticketId) {
+      throw new Error(`分派 API 已成功，但重新載入工單詳情或處理歷程失敗：${detailError.value || '請稍後重新整理。'}`)
+    }
+    assignSuccess.value = '工單已成功分派，最新工單詳情與處理歷程已載入。'
+  } catch (cause) {
+    assignError.value = cause instanceof Error ? cause.message : '工單分派時發生錯誤，請稍後重試。'
+  } finally {
+    preserveSelectedTicketId.value = null
+    assignLoading.value = false
+  }
+}
+
 function logout() {
   clearAdminAuthentication()
   void router.push('/admin/login')
@@ -363,11 +412,15 @@ function resetFilters() {
             :detail-warnings="detailWarnings"
             :review-loading="reviewLoading"
             :review-error="reviewError"
+            :assign-loading="assignLoading"
+            :assign-error="assignError"
+            :assign-success="assignSuccess"
             @retry="retrySelectedDetail"
             @start-review="beginTicketReview"
+            @assign-ticket="assignSelectedTicket"
           />
         </section>
-        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜所有覆核與處置功能目前停用，不會修改工單。' : 'API 工單列表與詳情｜人工覆核與處置功能尚未開放。' }}</p>
+        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜AI 與分派功能不會修改展示工單。' : 'API 工單列表與詳情｜AI 分析及確認分派已串接服務；要求補件尚未串接。' }}</p>
       </main>
     </div>
 

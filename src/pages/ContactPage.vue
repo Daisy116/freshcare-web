@@ -122,8 +122,7 @@ function nextStep() {
         <section class="form-card submit-card">
           <label class="consent-box"><input v-model="draft.privacyAccepted" type="checkbox" /><span>我已閱讀並同意《個人資料蒐集與處理條款》及《生鮮農產品驗收與退換貨規範》。本人確認提供之照片與反映情況皆屬真實。</span></label>
           <small v-if="errors.privacyAccepted" class="field-error" role="alert">{{ errors.privacyAccepted }}</small>
-          <div class="submit-row"><span class="security-note">✓　資料僅用於本次問題處理，不會保存於此裝置</span><button class="primary-button" type="submit">下一步：確認資料 <span aria-hidden="true">→</span></button></div>
-          <p class="submit-note">送出後案件將進入受理流程，專員將於 4 - 12 工作小時內回覆。</p>
+          <div class="submit-row"><span class="security-note"></span><button class="primary-button" type="submit">下一步：確認資料 <span aria-hidden="true">→</span></button></div>
         </section>
       </form>
 

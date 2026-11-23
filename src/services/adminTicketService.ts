@@ -303,6 +303,7 @@ export function parseAdminTicket(value: unknown): AdminTicket {
   const aiSuggestion = parseAiSuggestion(value)
   const status = parseStatus(statusValue)
   const reviewStatus = parseReviewStatus(value.review_status)
+  const reviewNote = firstString(value, ['review_note', 'reviewer_note', 'review_comments'])
   return {
     id,
     customerName: firstString(value, ['customer_name', 'name', 'customerName']) ?? '',
@@ -319,6 +320,7 @@ export function parseAdminTicket(value: unknown): AdminTicket {
     ...(status.warning !== undefined ? { statusWarning: status.warning } : {}),
     ...(reviewStatus.status ? { reviewStatus: reviewStatus.status } : {}),
     ...(reviewStatus.warning !== undefined ? { reviewStatusWarning: reviewStatus.warning } : {}),
+    ...(reviewNote ? { reviewNote } : {}),
     createdAt,
     updatedAt: firstDate(value, ['updated_at', 'updatedAt']) ?? createdAt,
     closedAt: value.closed_at === null || value.closed_at === undefined
@@ -477,6 +479,55 @@ export async function startAdminTicketReview(ticketId: string): Promise<void> {
   if (response.status === 500) throw new Error('工單審核服務發生錯誤，請稍後重試。（HTTP 500）')
   if (response.status === 401) throw new Error('管理員登入已失效，請重新登入。')
   throw new Error(`開始審核失敗（HTTP ${response.status}），請稍後重試。`)
+}
+
+export async function assignAdminTicket(
+  ticketId: string,
+  reviewDepartment: string,
+  reviewNote: string,
+): Promise<void> {
+  if (!ticketId.trim()) throw new Error('請先選取要分派的工單。')
+  if (!reviewDepartment.trim()) throw new Error('請選擇負責部門。')
+
+  let response: Response
+  try {
+    response = await adminApiFetch('/api/admin/assign-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticket_id: ticketId,
+        review_department: reviewDepartment,
+        review_note: reviewNote,
+      }),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === '請先登入後台。') throw error
+    throw new Error('無法連線至工單分派服務，請確認本機 n8n 是否啟動後重試。')
+  }
+
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    if (response.status === 200) {
+      throw new Error('工單分派 API 回傳的內容不是有效 JSON，無法確認是否分派成功。')
+    }
+  }
+
+  const record = isRecord(payload)
+    ? payload
+    : Array.isArray(payload) && payload.length === 1 && isRecord(payload[0]) ? payload[0] : null
+  const message = record ? firstString(record, ['message', 'error', 'detail', 'description'])?.trim() : undefined
+
+  if (response.status === 401) throw new Error(message || '管理員登入已失效，請重新登入。')
+  if (response.status !== 200) {
+    throw new Error(message
+      ? `${message}（HTTP ${response.status}）`
+      : `工單分派失敗（HTTP ${response.status}），請稍後重試。`)
+  }
+  if (record?.success !== true) {
+    throw new Error(message || '工單分派 API 未回傳 success: true，無法確認分派成功。')
+  }
 }
 
 export function filterAdminTickets(

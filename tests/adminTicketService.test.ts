@@ -135,6 +135,45 @@ describe('admin mock ticket data', () => {
       }
     })
 
+    it('posts the human-selected department and review note, requiring success true', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { assignAdminTicket } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+      await expect(assignAdminTicket('CS-ASSIGN-001', '物流部門', '請優先處理配送破損。')).resolves.toBeUndefined()
+
+      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      expect(url).toBe('/api/admin/assign-ticket')
+      expect(options.method).toBe('POST')
+      expect(options.body).toBe(JSON.stringify({
+        ticket_id: 'CS-ASSIGN-001',
+        review_department: '物流部門',
+        review_note: '請優先處理配送破損。',
+      }))
+      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+
+      const failures = [
+        [400, { message: '缺少必要資料' }, '缺少必要資料'],
+        [404, { error: '找不到工單' }, '找不到工單'],
+        [409, { detail: '工單狀態已變更' }, '工單狀態已變更'],
+        [200, { success: false, message: '部門不允許分派' }, '部門不允許分派'],
+      ] as const
+      for (const [status, payload, message] of failures) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status }))
+        const expectedMessage = status === 200 ? message : `${message}（HTTP ${status}）`
+        await expect(assignAdminTicket('CS-ASSIGN-001', '物流部門', '備註')).rejects.toThrow(expectedMessage)
+      }
+
+      await expect(assignAdminTicket('CS-ASSIGN-001', '', '備註')).rejects.toThrow('請選擇負責部門')
+    })
+
     it('rejects invalid counts and malformed tickets', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
@@ -221,6 +260,8 @@ describe('admin mock ticket data', () => {
             issue_type: 'wrong-item',
             product_id: 'P003',
             description: '顧客回報商品品項不符。',
+            review_note: '已確認商品配送狀況。',
+            assigned_department: '物流部門',
             created_at: '2026-11-20T02:00:00.000Z',
             ai_suggestion: {
               category: '商品錯誤',
@@ -269,6 +310,8 @@ describe('admin mock ticket data', () => {
           issueType: 'wrong-item',
           description: '顧客回報商品品項不符。',
           aiSuggestion: { category: '商品錯誤', department: '客服組', action: '核對出貨紀錄' },
+          reviewNote: '已確認商品配送狀況。',
+          department: '物流部門',
           events: [{ id: 'EV-1', title: '案件已受理', description: '收到顧客案件。', timestamp: '2026-11-20T02:00:00.000Z', complete: true }],
         },
         warnings: ['商品資料尚待確認'],

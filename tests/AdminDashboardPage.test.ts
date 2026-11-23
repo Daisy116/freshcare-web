@@ -51,16 +51,16 @@ describe('admin dashboard', () => {
 
     await wrapper.get('input[aria-label="搜尋工單編號、顧客姓名或訂單號"]').setValue('張庭瑄')
     expect(wrapper.findAll('.admin-ticket-table tbody tr')).toHaveLength(1)
-    expect(wrapper.get('.admin-detail-heading h2').text()).toBe('CS-2026-0517-105')
+    expect(wrapper.get('.admin-detail-heading h2').text()).toContain('CS-2026-0517-105')
 
     await wrapper.get('input[aria-label="搜尋工單編號、顧客姓名或訂單號"]').setValue('')
     await wrapper.get('select[aria-label="工單狀態"]').setValue('needs-info')
     expect(wrapper.findAll('.admin-ticket-table tbody tr')).toHaveLength(1)
-    expect(wrapper.get('.admin-detail-heading h2').text()).toBe('CS-2026-0517-098')
+    expect(wrapper.get('.admin-detail-heading h2').text()).toContain('CS-2026-0517-098')
 
     await wrapper.get('select[aria-label="工單狀態"]').setValue('')
     await wrapper.get('tr[aria-selected="false"]').trigger('click')
-    expect(wrapper.get('.admin-detail-heading h2').text()).not.toBe('CS-2026-0517-098')
+    expect(wrapper.get('.admin-detail-heading h2').text()).not.toContain('CS-2026-0517-098')
   })
 
   it('combines filter controls and resets them without changing all-ticket KPIs', async () => {

@@ -38,6 +38,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: () => '/webhook/freshcare/admin/tickets/start-review',
       },
+      '/api/admin/assign-ticket': {
+        target: 'http://localhost:5678',
+        changeOrigin: true,
+        rewrite: () => '/webhook/freshcare/assign-ticket',
+      },
       '/api/admin/tickets': {
         target: 'http://localhost:5678',
         changeOrigin: true,

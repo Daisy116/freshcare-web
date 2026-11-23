@@ -1,18 +1,148 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import type { AdminTicket, AdminTicketDetailStatus } from '@/types/adminTicket'
-import { getReviewStatusLabel, getTicketStatusLabel } from '@/utils/ticketStatus'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
+import { getTicketStatusLabel } from '@/utils/ticketStatus'
 
-defineProps<{
+const props = defineProps<{
   ticket: AdminTicket | null
   detailStatus?: AdminTicketDetailStatus
   detailError?: string
   detailWarnings?: string[]
   reviewLoading?: boolean
   reviewError?: string
+  assignLoading?: boolean
+  assignError?: string
+  assignSuccess?: string
 }>()
-defineEmits<{ retry: []; startReview: [] }>()
+const emit = defineEmits<{
+  retry: []
+  startReview: []
+  assignTicket: [payload: { ticketId: string; reviewDepartment: ReviewDepartment; reviewNote: string }]
+}>()
 
+type ReviewAction = 'request-info' | 'assign'
+type ReviewDepartment = '' | '品質部門' | '物流部門' | '客服部門'
+
+const isReviewable = computed(() => props.ticket?.status === 'received' || props.ticket?.status === 'under_review')
+const assignmentEvent = computed(() => props.ticket?.events
+  .filter((event) => /分派|指派|assign/i.test(`${event.title} ${event.description}`)
+    && Number.isFinite(Date.parse(event.timestamp)))
+  .sort((left, right) => Date.parse(right.timestamp || '') - Date.parse(left.timestamp || ''))[0])
+const assignedAt = computed(() => assignmentEvent.value?.timestamp || props.ticket?.updatedAt || '')
+const assignedNote = computed(() => props.ticket?.reviewNote?.trim() || '未提供人工審核備註')
+const aiDepartment = computed(() => props.ticket?.aiSuggestion?.department.trim() || '')
+const assignedDepartment = computed(() => props.ticket?.department.trim() || '')
+const aiSuggestionStatus = computed(() => aiDepartment.value
+  || (props.ticket?.aiSuggestion ? 'AI 尚無部門建議' : '未使用 AI 分析'))
+
+function normalizedDepartment(value: string): string {
+  const department = value.toLocaleLowerCase().replaceAll(/\s+/g, '')
+  if (department.includes('品質') || department.includes('品管') || department.includes('quality')) return '品質部門'
+  if (department.includes('物流') || department.includes('配送') || department.includes('倉儲') || department.includes('出貨') || department.includes('delivery') || department.includes('logistic')) return '物流部門'
+  if (department.includes('客服') || department.includes('customer')) return '客服部門'
+  return department
+}
+
+const adoptedAiSuggestion = computed(() => Boolean(aiDepartment.value
+  && assignedDepartment.value
+  && normalizedDepartment(aiDepartment.value) === normalizedDepartment(assignedDepartment.value)))
+const aiAdoptionLabel = computed(() => aiDepartment.value
+  ? adoptedAiSuggestion.value ? '✓ 已採納 AI 建議' : '人工調整，未採納 AI 建議'
+  : props.ticket?.aiSuggestion ? '無 AI 部門建議可供比較' : '未使用 AI 建議，由人工決定')
+const selectedDepartment = ref<ReviewDepartment>('')
+const reviewNote = ref('')
+const supplementContent = ref('')
+const formError = ref('')
+const actionNotice = ref('')
+const attemptedSignatures = ref<Record<ReviewAction, string>>({ 'request-info': '', assign: '' })
+
+function suggestedDepartment(value: string | undefined): ReviewDepartment {
+  const department = value?.trim().toLocaleLowerCase() ?? ''
+  if (department.includes('品質') || department.includes('品管') || department.includes('quality')) return '品質部門'
+  if (department.includes('物流') || department.includes('配送') || department.includes('倉儲') || department.includes('出貨') || department.includes('delivery') || department.includes('logistic')) return '物流部門'
+  if (department.includes('客服') || department.includes('customer service')) return '客服部門'
+  return ''
+}
+
+watch(
+  () => props.ticket?.id,
+  () => {
+    selectedDepartment.value = suggestedDepartment(props.ticket?.aiSuggestion?.department)
+    reviewNote.value = ''
+    supplementContent.value = ''
+    formError.value = ''
+    actionNotice.value = ''
+    attemptedSignatures.value = { 'request-info': '', assign: '' }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.ticket?.aiSuggestion?.department,
+  (department) => {
+    if (department !== undefined && !selectedDepartment.value) {
+      selectedDepartment.value = suggestedDepartment(department)
+    }
+  },
+)
+
+watch([selectedDepartment, reviewNote, supplementContent], () => {
+  formError.value = ''
+  actionNotice.value = ''
+  attemptedSignatures.value = { 'request-info': '', assign: '' }
+})
+
+watch(
+  () => props.assignSuccess,
+  (success) => {
+    if (success) attemptedSignatures.value.assign = actionSignature('assign')
+  },
+)
+
+function actionSignature(action: ReviewAction): string {
+  return JSON.stringify([
+    action,
+    selectedDepartment.value,
+    reviewNote.value.trim(),
+    supplementContent.value.trim(),
+  ])
+}
+
+function isDuplicateAttempt(action: ReviewAction): boolean {
+  return attemptedSignatures.value[action] === actionSignature(action)
+}
+
+function attemptReviewAction(action: ReviewAction) {
+  if (props.assignLoading || !isReviewable.value) return
+  formError.value = ''
+  actionNotice.value = ''
+
+  if (action === 'request-info' && !supplementContent.value.trim()) {
+    formError.value = '請先填寫要求顧客補充的內容。'
+    return
+  }
+  if (action === 'assign' && !selectedDepartment.value) {
+    formError.value = '請先選擇負責部門。'
+    return
+  }
+
+  const signature = actionSignature(action)
+  if (isDuplicateAttempt(action)) return
+
+  if (action === 'request-info') {
+    attemptedSignatures.value = { ...attemptedSignatures.value, [action]: signature }
+    actionNotice.value = '尚未串接審核 API，資料未送出，工單狀態不會變更。'
+    return
+  }
+
+  if (!props.ticket || !selectedDepartment.value) return
+  emit('assignTicket', {
+    ticketId: props.ticket.id,
+    reviewDepartment: selectedDepartment.value,
+    reviewNote: reviewNote.value.trim(),
+  })
+}
 
 const aiCategoryLabels: Record<string, string> = {
   quality: '商品品質異常',
@@ -61,8 +191,7 @@ function formatDate(value: string): string {
           <h3>顧客工單資訊</h3>
           <span v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</span>
         </div>
-        <h2>{{ ticket.id }}</h2>
-        <span class="admin-detail-channel">購買管道：{{ ticket.channel }}</span>
+        <h2><span>工單編號</span>{{ ticket.id }}</h2>
       </header>
 
       <ul v-if="detailWarnings?.length" class="admin-detail-warnings" aria-label="工單資料提醒">
@@ -70,14 +199,24 @@ function formatDate(value: string): string {
       </ul>
 
       <div class="admin-customer-card">
-        <div class="admin-customer-name"><strong>{{ ticket.customerName || '未提供姓名' }}</strong><span>顧客姓名</span><a v-if="ticket.phone" :href="`tel:${ticket.phone}`">☎ {{ ticket.phone }}</a><span v-if="ticket.email">{{ ticket.email }}</span></div>
+        <dl class="admin-customer-contacts" aria-label="顧客聯絡資訊">
+          <div class="admin-customer-contact admin-customer-contact-name"><dt>顧客姓名</dt><dd>{{ ticket.customerName || '未提供姓名' }}</dd></div>
+          <div class="admin-customer-contact"><dt>Email</dt><dd>{{ ticket.email || '未提供' }}</dd></div>
+          <div class="admin-customer-contact"><dt>聯絡電話</dt><dd><a v-if="ticket.phone" :href="`tel:${ticket.phone}`">{{ ticket.phone }}</a><span v-else>未提供</span></dd></div>
+        </dl>
         <dl class="admin-ticket-meta">
           <div v-if="ticket.orderNumber"><dt>訂單編號</dt><dd>{{ ticket.orderNumber }}</dd></div>
           <div><dt>反映時間</dt><dd>{{ formatDate(ticket.createdAt) }}</dd></div>
           <div v-if="ticket.product"><dt>購買品項</dt><dd>{{ ticket.product }}</dd></div>
-          <div v-if="ticket.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(ticket.issueType) }}</dd></div>
         </dl>
-        <div class="admin-customer-description"><strong>顧客描述</strong><p>「{{ ticket.description }}」</p></div>
+        <dl class="admin-ticket-context">
+          <div><dt>問題類型</dt><dd>{{ ticket.issueType ? getIssueTypeLabel(ticket.issueType) : '未提供' }}</dd></div>
+          <div><dt>購買管道</dt><dd>{{ ticket.channel || '未提供' }}</dd></div>
+        </dl>
+        <section class="admin-customer-description" aria-label="顧客描述">
+          <h4>顧客描述</h4>
+          <p>{{ ticket.description ? `「${ticket.description}」` : '未提供描述' }}</p>
+        </section>
       </div>
 
       <section class="admin-attachments">
@@ -118,21 +257,90 @@ function formatDate(value: string): string {
           v-else-if="!ticket.aiSuggestion"
           class="admin-ai-waiting"
         >
-          等待 AI 分析
+          {{ ticket.status === 'assigned' ? '未使用 AI 分析' : '等待 AI 分析' }}
         </p>
 
       </section>
 
-      <section class="admin-review">
-        <header><h4>專員審核與處置備註</h4><span>將寫入工單備查歷程</span></header>
-        <textarea disabled aria-label="專員審核備註" placeholder="後續可於此記錄審核與處置備註"></textarea>
+      <section v-if="ticket.status === 'assigned'" class="admin-review-summary">
+        <header class="admin-review-heading"><h4>審核結果摘要</h4><span>AI vs 人工決策</span></header>
+        <div class="admin-decision-comparison">
+          <article>
+            <span class="admin-decision-label">AI 建議部門</span>
+            <strong>{{ aiSuggestionStatus }}</strong>
+          </article>
+          <span class="admin-decision-divider" aria-hidden="true">→</span>
+          <article>
+            <span class="admin-decision-label">人工最終分派</span>
+            <strong>{{ assignedDepartment || '未提供分派部門' }}</strong>
+          </article>
+        </div>
+        <p class="admin-decision-adoption" :class="{ 'is-adopted': adoptedAiSuggestion }">
+          {{ aiAdoptionLabel }}
+        </p>
+        <dl class="admin-decision-meta">
+          <div>
+            <dt>人工備註</dt>
+            <dd>{{ assignedNote }}</dd>
+          </div>
+          <div>
+            <dt>分派時間</dt>
+            <dd>{{ assignedAt ? formatDate(assignedAt) : '未提供' }}</dd>
+          </div>
+        </dl>
+      </section>
+      <section v-else-if="isReviewable" class="admin-review">
+        <header class="admin-review-heading"><h4>人工審核資料</h4><span>可獨立於 AI 分析進行</span></header>
+        <label class="admin-review-field">
+          <span>負責部門</span>
+          <select v-model="selectedDepartment" aria-label="負責部門">
+            <option value="">請選擇部門</option>
+            <option value="品質部門">品質部門</option>
+            <option value="物流部門">物流部門</option>
+            <option value="客服部門">客服部門</option>
+          </select>
+        </label>
+        <label class="admin-review-field">
+          <span>審核意見與處置說明</span>
+          <textarea
+            v-model="reviewNote"
+            aria-label="審核意見與處置說明"
+            placeholder="記錄案件判斷、處置方式或聯繫情形（選填）"
+          ></textarea>
+        </label>
+        <label class="admin-review-field">
+          <span>要求顧客補件內容 <small>執行「要求補件」時必填</small></span>
+          <textarea
+            v-model="supplementContent"
+            aria-label="要求顧客補件內容"
+            placeholder="說明需要顧客補充的資料或照片"
+          ></textarea>
+        </label>
         <p v-if="reviewError" class="admin-review-error" role="alert">{{ reviewError }}</p>
-        <div class="admin-disabled-actions">
-          <button type="button" disabled>⇄ 修改部門</button>
-          <button type="button" disabled>▧ 要求補件</button>
-          <button type="button" disabled>✓ 確認分派</button>
+        <p v-if="formError" class="admin-review-error" role="alert">{{ formError }}</p>
+        <p v-if="actionNotice" class="admin-review-notice" role="status">{{ actionNotice }}</p>
+        <div class="admin-review-decisions">
+          <h5>提交決策</h5>
+          <div class="admin-review-actions">
+            <button
+              type="button"
+              :disabled="assignLoading || isDuplicateAttempt('request-info')"
+              @click="attemptReviewAction('request-info')"
+            >▧　要求補件</button>
+            <button
+              type="button"
+              :disabled="assignLoading || isDuplicateAttempt('assign')"
+              @click="attemptReviewAction('assign')"
+            ><span v-if="assignLoading" class="loading-spinner" aria-hidden="true"></span>{{ assignLoading ? '分派中…' : '✓　確認分派' }}</button>
+          </div>
+          <p>要求補件尚未串接 API；確認分派會送出工單編號、部門與審核備註。</p>
         </div>
       </section>
+      <p v-else class="admin-review-unavailable">
+        此工單目前為{{ getTicketStatusLabel(ticket.status) }}，暫不開放人工審核操作。
+      </p>
+      <p v-if="assignError" class="admin-review-error" role="alert">{{ assignError }}</p>
+      <p v-if="assignSuccess" class="admin-review-notice" role="status">{{ assignSuccess }}</p>
     </section>
 
     <section class="admin-detail-card admin-history">

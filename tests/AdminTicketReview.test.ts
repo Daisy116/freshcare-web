@@ -1,10 +1,11 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { fetchTicketsMock, fetchDetailMock, startReviewMock, routerPushMock } = vi.hoisted(() => ({
+const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, routerPushMock } = vi.hoisted(() => ({
   fetchTicketsMock: vi.fn(),
   fetchDetailMock: vi.fn(),
   startReviewMock: vi.fn(),
+  assignTicketMock: vi.fn(),
   routerPushMock: vi.fn(),
 }))
 
@@ -21,6 +22,7 @@ vi.mock('../src/services/adminTicketService', async () => {
     fetchAdminTickets: fetchTicketsMock,
     fetchAdminTicketDetail: fetchDetailMock,
     startAdminTicketReview: startReviewMock,
+    assignAdminTicket: assignTicketMock,
   }
 })
 
@@ -33,6 +35,85 @@ describe('admin ticket review action', () => {
     vi.useRealTimers()
     vi.clearAllMocks()
     vi.resetModules()
+    vi.restoreAllMocks()
+  })
+
+  it('sends the manually selected department and note, then refreshes list and detail', async () => {
+    const confirmMock = vi.spyOn(window, 'confirm')
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = {
+      ...mockAdminTickets[0]!,
+      status: 'received' as const,
+      aiSuggestion: { category: 'quality', department: '品管組', action: '核對商品' },
+    }
+    const assigned = {
+      ...received,
+      status: 'assigned' as const,
+      department: '物流部門',
+      reviewNote: '請優先處理配送破損。',
+      events: [{
+        id: 'EV-ASSIGN',
+        title: '已分派',
+        description: '工單已分派至物流部門。',
+        timestamp: '2026-11-23T09:00:00.000Z',
+        complete: true,
+      }],
+    }
+    fetchTicketsMock
+      .mockResolvedValueOnce([received])
+      .mockResolvedValueOnce([assigned])
+    fetchDetailMock
+      .mockResolvedValueOnce({ ticket: received, warnings: [] })
+      .mockResolvedValueOnce({ ticket: assigned, warnings: [] })
+    let resolveAssign!: () => void
+    assignTicketMock.mockImplementation(() => new Promise<void>((resolve) => { resolveAssign = resolve }))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    expect(wrapper.get('select[aria-label="負責部門"]').element).toHaveProperty('value', '品質部門')
+    await wrapper.get('select[aria-label="負責部門"]').setValue('物流部門')
+    await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('請優先處理配送破損。')
+    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+
+    expect(confirmMock).not.toHaveBeenCalled()
+    expect(assignTicketMock).toHaveBeenCalledWith(received.id, '物流部門', '請優先處理配送破損。')
+    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.admin-review-actions button:last-child').text()).toContain('分派中')
+
+    resolveAssign()
+    await flushPromises()
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
+    expect(fetchDetailMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('工單已成功分派')
+    expect(wrapper.text()).toContain('工單已分派至物流部門。')
+    expect(wrapper.find('.admin-review-summary').text()).toContain('人工調整，未採納 AI 建議')
+    expect(wrapper.find('.admin-review-summary').text()).toContain('請優先處理配送破損。')
+  })
+
+  it('displays the backend assignment error and allows retry without reloading data', async () => {
+    const confirmMock = vi.spyOn(window, 'confirm')
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = {
+      ...mockAdminTickets[0]!,
+      status: 'received' as const,
+      aiSuggestion: null,
+    }
+    fetchTicketsMock.mockResolvedValue([received])
+    fetchDetailMock.mockResolvedValue({ ticket: received, warnings: [] })
+    assignTicketMock.mockRejectedValue(new Error('工單狀態已變更（HTTP 409）'))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    await wrapper.get('select[aria-label="負責部門"]').setValue('客服部門')
+    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('工單狀態已變更（HTTP 409）')
+    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeUndefined()
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
+    expect(confirmMock).not.toHaveBeenCalled()
   })
 
   it('polls until AI fields are complete, then refreshes the list, KPIs and latest detail', async () => {
@@ -91,8 +172,8 @@ describe('admin ticket review action', () => {
     expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
     expect(fetchDetailMock).toHaveBeenCalledTimes(4)
     expect(wrapper.get('select[aria-label="工單狀態"]').element).toHaveProperty('value', 'received')
-    expect(wrapper.get('.admin-detail-heading h2').text()).toBe(received.id)
-    expect(wrapper.get('.admin-status-chip').text()).toBe('審核中')
+    expect(wrapper.get('.admin-detail-heading h2').text()).toContain(received.id)
+    expect(wrapper.find('.admin-review-actions').exists()).toBe(true)
     expect(wrapper.text()).toContain('專員已開始審核工單。')
     expect(wrapper.text()).toContain('商品有碰傷')
     expect(wrapper.find('.admin-approve-button').exists()).toBe(false)
@@ -172,7 +253,7 @@ describe('admin ticket review action', () => {
     await flushPromises()
 
     expect(fetchDetailMock).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('.admin-detail-heading h2').text()).toBe(other.id)
+    expect(wrapper.get('.admin-detail-heading h2').text()).toContain(other.id)
     expect(wrapper.find('.admin-approve-button').exists()).toBe(false)
   })
 

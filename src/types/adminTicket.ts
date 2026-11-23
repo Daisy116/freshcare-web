@@ -43,6 +43,7 @@ export interface AdminTicket {
   statusWarning?: string
   reviewStatus?: AdminReviewStatus
   reviewStatusWarning?: string
+  reviewNote?: string
   createdAt: string
   updatedAt: string
   closedAt: string | null
