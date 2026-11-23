@@ -56,6 +56,8 @@ const selectedTicket = computed(() => adminTicketsMode === 'mock'
   : ticketDetail.value)
 const issueTypes = computed(() => [...new Set(tickets.value.map((ticket) => ticket.issueType).filter(Boolean))])
 const hasFilters = computed(() => Boolean(search.value || statusFilter.value || issueFilter.value || priorityFilter.value || dateFrom.value || dateTo.value))
+const reviewPollIntervalMs = 2_000
+const reviewTimeoutMs = 60_000
 
 watch(visibleTickets, (visible) => {
   if (!visible.some((ticket) => ticket.id === selectedTicketId.value)) {
@@ -66,6 +68,14 @@ watch(visibleTickets, (visible) => {
 })
 
 let detailController: AbortController | null = null
+let reviewController: AbortController | null = null
+
+function cancelReviewPolling() {
+  reviewController?.abort()
+  reviewController = null
+  reviewLoading.value = false
+}
+
 async function loadTicketDetail(ticketId: string, fallback: AdminTicket) {
   detailController?.abort()
   const controller = new AbortController()
@@ -96,6 +106,7 @@ watch(
   () => selectedTicketId.value,
   (ticketId) => {
     if (adminTicketsMode !== 'api') return
+    cancelReviewPolling()
     detailController?.abort()
     detailController = null
     ticketDetail.value = null
@@ -133,7 +144,10 @@ async function loadTickets(): Promise<AdminTicket[] | null> {
 
 onMounted(() => { void loadTickets() })
 
-onBeforeUnmount(() => { detailController?.abort() })
+onBeforeUnmount(() => {
+  detailController?.abort()
+  cancelReviewPolling()
+})
 
 function retrySelectedDetail() {
   const fallback = tickets.value.find((ticket) => ticket.id === selectedTicketId.value)
@@ -149,28 +163,87 @@ async function beginTicketReview() {
     return
   }
 
+  const controller = new AbortController()
+  reviewController = controller
   reviewLoading.value = true
   reviewError.value = ''
+  let timedOut = false
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const isCurrentReview = () => reviewController === controller && !controller.signal.aborted
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+      reject(new Error('AI 分析逾時（已等待 60 秒），請稍後重試。'))
+    }, reviewTimeoutMs)
+  })
+
   try {
-    await startAdminTicketReview(ticketId)
-    preserveSelectedTicketId.value = ticketId
-    const refreshedTickets = await loadTickets()
-    if (!refreshedTickets) {
-      reviewError.value = `審核請求已回應 HTTP 200，但重新載入工單列表失敗：${loadError.value}`
-    } else {
-      const refreshedTicket = refreshedTickets.find((item) => item.id === ticketId)
-      if (!refreshedTicket) {
-        reviewError.value = '審核請求已回應 HTTP 200，但最新工單列表中找不到此工單。'
-      } else if (refreshedTicket.status !== 'under_review') {
-        reviewError.value = `審核請求已回應 HTTP 200，但最新狀態為「${getTicketStatusLabel(refreshedTicket.status)}」，尚未確認為審核中。`
+    const reviewProcess = async () => {
+      await startAdminTicketReview(ticketId)
+      const deadline = Date.now() + reviewTimeoutMs
+
+      while (isCurrentReview()) {
+        const delay = Math.min(reviewPollIntervalMs, deadline - Date.now())
+        if (delay <= 0) throw new Error('AI 分析逾時（已等待 60 秒），請稍後重試。')
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            clearTimeout(pollTimer)
+            controller.signal.removeEventListener('abort', onAbort)
+            reject(new Error('AI 分析輪詢已取消。'))
+          }
+          const pollTimer = setTimeout(() => {
+            controller.signal.removeEventListener('abort', onAbort)
+            resolve()
+          }, delay)
+          controller.signal.addEventListener('abort', onAbort, { once: true })
+        })
+        if (!isCurrentReview()) return
+
+        const fallback = tickets.value.find((item) => item.id === ticketId)
+        if (!fallback) throw new Error('工單已不在目前列表中，無法繼續 AI 分析。')
+        const detail = await fetchAdminTicketDetail(ticketId, fallback, controller.signal)
+        if (!isCurrentReview()) return
+        const suggestion = detail.ticket.aiSuggestion
+        if (suggestion?.category.trim() && suggestion.department.trim()
+          && suggestion.priority && suggestion.reason?.trim()) {
+          ticketDetail.value = detail.ticket
+          detailWarnings.value = detail.warnings
+          detailStatus.value = 'ready'
+          if (timeoutId) clearTimeout(timeoutId)
+
+          preserveSelectedTicketId.value = ticketId
+          const refreshedTickets = await loadTickets()
+          if (!isCurrentReview()) return
+          if (!refreshedTickets) {
+            reviewError.value = `AI 分析已完成，但重新載入工單列表失敗：${loadError.value}`
+          } else {
+            const refreshedTicket = refreshedTickets.find((item) => item.id === ticketId)
+            if (!refreshedTicket) {
+              reviewError.value = 'AI 分析已完成，但最新工單列表中找不到此工單。'
+            } else if (refreshedTicket.status !== 'under_review') {
+              reviewError.value = `AI 分析已完成，但最新狀態為「${getTicketStatusLabel(refreshedTicket.status)}」，尚未確認為審核中。`
+            }
+          }
+          return
+        }
       }
     }
+    await Promise.race([reviewProcess(), timeout])
   } catch (cause) {
-    reviewError.value = cause instanceof Error ? cause.message : '開始審核時發生錯誤，請稍後重試。'
+    if (reviewController === controller) {
+      reviewError.value = timedOut
+        ? 'AI 分析逾時（已等待 60 秒），請稍後重試。'
+        : cause instanceof Error ? cause.message : 'AI 分析時發生錯誤，請稍後重試。'
+    }
   } finally {
-    await nextTick()
-    preserveSelectedTicketId.value = null
-    reviewLoading.value = false
+    if (timeoutId) clearTimeout(timeoutId)
+    if (reviewController === controller) {
+      await nextTick()
+      preserveSelectedTicketId.value = null
+      reviewController = null
+      reviewLoading.value = false
+    }
   }
 }
 

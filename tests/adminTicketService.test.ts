@@ -150,6 +150,37 @@ describe('admin mock ticket data', () => {
       })).toThrow('日期欄位')
     })
 
+    it('parses all AI analysis fields returned by the existing ticket API', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const { parseAdminTicketsResponse } = await import('../src/services/adminTicketService')
+      const [ticket] = parseAdminTicketsResponse({
+        success: true,
+        count: 1,
+        tickets: [{
+          ticket_id: 'CS-AI-001',
+          ticket_status: 'under_review',
+          created_at: '2026-11-20T02:00:00Z',
+          ai_category: '商品品質',
+          ai_department: '品管組',
+          ai_priority: 'high',
+          ai_reason: '顧客回報商品有碰傷。',
+        }],
+      })
+
+      expect(ticket).toMatchObject({
+        priority: 'high',
+        aiSuggestion: {
+          category: '商品品質',
+          department: '品管組',
+          priority: 'high',
+          reason: '顧客回報商品有碰傷。',
+        },
+      })
+    })
+
     it('keeps waiting_customer and unknown-status tickets in the parsed list', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')

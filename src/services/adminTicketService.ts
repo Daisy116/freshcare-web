@@ -249,19 +249,35 @@ function parseAiSuggestion(record: Record<string, unknown>): AdminTicket['aiSugg
     const category = firstString(record, ['ai_category', 'suggested_category'])
     const department = firstString(record, ['ai_department', 'suggested_department'])
     const action = firstString(record, ['ai_action', 'suggested_action'])
-    if (!category && !department && !action) return null
+    const priority = firstString(record, ['ai_priority'])?.trim()
+    const reason = firstString(record, ['ai_reason'])
+    if (!category && !department && !action && !priority && !reason) return null
     return {
       category: category ?? '',
       department: department ?? '',
       action: action ?? '',
+      ...(priority ? { priority: parsePriority(priority) } : {}),
+      ...(reason ? { reason } : {}),
     }
   }
   if (!isRecord(raw)) throw new Error('工單 AI 建議欄位格式不正確。')
-  const category = firstString(raw, ['category', 'suggested_category'])
-  const department = firstString(raw, ['department', 'suggested_department'])
+  const category = firstString(raw, ['category', 'ai_category', 'suggested_category'])
+    ?? firstString(record, ['ai_category', 'suggested_category'])
+  const department = firstString(raw, ['department', 'ai_department', 'suggested_department'])
+    ?? firstString(record, ['ai_department', 'suggested_department'])
   const action = firstString(raw, ['action', 'suggested_action', 'resolution'])
-  if (!category && !department && !action) return null
-  return { category: category ?? '', department: department ?? '', action: action ?? '' }
+    ?? firstString(record, ['ai_action', 'suggested_action'])
+  const priority = (firstString(raw, ['priority', 'ai_priority'])
+    ?? firstString(record, ['ai_priority']))?.trim()
+  const reason = firstString(raw, ['reason', 'ai_reason']) ?? firstString(record, ['ai_reason'])
+  if (!category && !department && !action && !priority && !reason) return null
+  return {
+    category: category ?? '',
+    department: department ?? '',
+    action: action ?? '',
+    ...(priority ? { priority: parsePriority(priority) } : {}),
+    ...(reason ? { reason } : {}),
+  }
 }
 
 function parseAttachments(value: unknown): string[] {
@@ -298,7 +314,7 @@ export function parseAdminTicket(value: unknown): AdminTicket {
     issueType,
     description: firstString(value, ['original_message', 'description', 'customer_description', 'content']) ?? '',
     department: firstString(value, ['assigned_department', 'department']) ?? aiSuggestion?.department ?? '',
-    priority: parsePriority(value.priority ?? value.priority_level),
+    priority: parsePriority(value.priority ?? value.priority_level ?? value.ai_priority),
     status: status.status,
     ...(status.warning !== undefined ? { statusWarning: status.warning } : {}),
     ...(reviewStatus.status ? { reviewStatus: reviewStatus.status } : {}),

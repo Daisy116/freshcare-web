@@ -13,6 +13,23 @@ defineProps<{
 }>()
 defineEmits<{ retry: []; startReview: [] }>()
 
+
+const aiCategoryLabels: Record<string, string> = {
+  quality: '商品品質異常',
+  damage: '商品破損',
+  'wrong-item': '商品錯誤',
+  quantity: '數量短少',
+  delivery: '配送問題',
+  modify: '訂單修改',
+  preservation: '保存與食用諮詢',
+  other: '其他問題',
+}
+
+function getAiCategoryLabel(category: string): string {
+  return aiCategoryLabels[category] ?? category
+}
+
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-TW', {
     year: 'numeric',
@@ -77,28 +94,45 @@ function formatDate(value: string): string {
       <section class="admin-ai-card">
         <h4><span aria-hidden="true">✦</span>AI 智能語意分析與分類建議</h4>
         <template v-if="ticket.aiSuggestion">
-          <div class="admin-ai-row"><span>建議歸屬類別</span><strong>{{ ticket.aiSuggestion.category }}</strong></div>
+          <div class="admin-ai-row"><span>建議歸屬類別</span><strong>{{ getAiCategoryLabel(ticket.aiSuggestion.category) }}</strong></div>
           <div class="admin-ai-row"><span>建議負責部門</span><strong>{{ ticket.aiSuggestion.department }}</strong></div>
-          <div class="admin-ai-row"><span>建議處置方向</span><strong>{{ ticket.aiSuggestion.action }}</strong></div>
+          <div v-if="ticket.aiSuggestion.priority" class="admin-ai-row"><span>建議優先級</span><strong>{{ ticket.aiSuggestion.priority === 'high' ? '高' : ticket.aiSuggestion.priority === 'medium' ? '中' : '低' }}</strong></div>
+          <div v-if="ticket.aiSuggestion.reason" class="admin-ai-row"><span>AI 分析原因</span><strong>{{ ticket.aiSuggestion.reason }}</strong></div>
+          <div v-if="ticket.aiSuggestion.action" class="admin-ai-row"><span>建議處置方向</span><strong>{{ ticket.aiSuggestion.action }}</strong></div>
         </template>
-        <p v-else class="admin-ai-waiting">等待 AI 分析</p>
+
+        <button
+          v-if="ticket.status === 'received' || reviewLoading"
+          class="admin-approve-button admin-ai-start-button"
+          type="button"
+          :disabled="reviewLoading"
+          @click="$emit('startReview')"
+        >
+          <span
+            v-if="reviewLoading"
+            class="loading-spinner"
+            aria-hidden="true"
+          ></span>
+          {{ reviewLoading ? 'AI 分析中…' : '▶　開始審核' }}
+        </button>
+
+        <p
+          v-else-if="!ticket.aiSuggestion"
+          class="admin-ai-waiting"
+        >
+          等待 AI 分析
+        </p>
+
       </section>
 
       <section class="admin-review">
         <header><h4>專員審核與處置備註</h4><span>將寫入工單備查歷程</span></header>
         <textarea disabled aria-label="專員審核備註" placeholder="後續可於此記錄審核與處置備註"></textarea>
-        <button
-          v-if="ticket.status === 'received'"
-          class="admin-approve-button"
-          type="button"
-          :disabled="reviewLoading"
-          @click="$emit('startReview')"
-        >{{ reviewLoading ? '◌　正在開始審核…' : '▶　開始審核' }}</button>
         <p v-if="reviewError" class="admin-review-error" role="alert">{{ reviewError }}</p>
         <div class="admin-disabled-actions">
           <button type="button" disabled>⇄ 修改部門</button>
           <button type="button" disabled>▧ 要求補件</button>
-          <button type="button" disabled>✓ 結案</button>
+          <button type="button" disabled>✓ 確認分派</button>
         </div>
       </section>
     </section>

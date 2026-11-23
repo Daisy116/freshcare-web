@@ -23,6 +23,8 @@ export interface AdminTicketAiSuggestion {
   category: string
   department: string
   action: string
+  priority?: AdminTicketPriority
+  reason?: string
 }
 
 export interface AdminTicket {
