@@ -530,6 +530,60 @@ export async function assignAdminTicket(
   }
 }
 
+export async function requestAdminTicketSupplement(
+  ticketId: string,
+  supplementRequest: string,
+  reviewNote: string,
+): Promise<void> {
+  if (!ticketId.trim()) throw new Error('請先選取要要求補件的工單。')
+  if (!supplementRequest.trim()) throw new Error('請填寫要求顧客補充的內容。')
+
+  let response: Response
+  try {
+    response = await adminApiFetch('/api/admin/request-supplement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticket_id: ticketId,
+        supplement_request: supplementRequest.trim(),
+        review_note: reviewNote,
+      }),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === '請先登入後台。') throw error
+    throw new Error('無法連線至工單補件服務，請確認本機 n8n 是否啟動後重試。')
+  }
+
+  let payload: unknown
+  let responseText = ''
+  const responseCopy = response.clone()
+  try {
+    payload = await response.json()
+  } catch {
+    if (response.status === 200) {
+      throw new Error('工單補件 API 回傳的內容不是有效 JSON，無法確認是否要求補件成功。')
+    }
+    responseText = (await responseCopy.text()).trim()
+  }
+
+  const record = isRecord(payload)
+    ? payload
+    : Array.isArray(payload) && payload.length === 1 && isRecord(payload[0]) ? payload[0] : null
+  const message = record
+    ? firstString(record, ['message', 'error', 'detail', 'description'])?.trim()
+    : responseText || undefined
+
+  if (response.status === 401) throw new Error(message || '管理員登入已失效，請重新登入。')
+  if (response.status !== 200) {
+    throw new Error(message
+      ? `${message}（HTTP ${response.status}）`
+      : `要求補件失敗（HTTP ${response.status}），請稍後重試。`)
+  }
+  if (record?.success !== true) {
+    throw new Error(message || '工單補件 API 未回傳 success: true，無法確認要求補件成功。')
+  }
+}
+
 export function filterAdminTickets(
   tickets: AdminTicket[],
   filters: AdminTicketFilters,

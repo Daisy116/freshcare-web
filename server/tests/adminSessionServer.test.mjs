@@ -137,6 +137,29 @@ test('protects management APIs and persists an encrypted session across backend 
   assert.equal(upstream.calls.at(-1).authorization, 'Basic c3RhZmY6c2VjcmV0')
   assert.deepEqual(JSON.parse(upstream.calls.at(-1).body), { ticket_id: 'FC-100', review_department: 'quality' })
 
+  const supplement = await fetch(`${sessionServer.baseUrl}/api/admin/request-supplement`, {
+    method: 'POST',
+    headers: {
+      Origin: appOrigin,
+      'X-CSRF-Token': loginBody.csrfToken,
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+    },
+    body: JSON.stringify({
+      ticket_id: 'FC-100',
+      supplement_request: '請提供商品外箱照片。',
+      review_note: '已確認商品外觀異常。',
+    }),
+  })
+  assert.equal(supplement.status, 200)
+  assert.equal(upstream.calls.at(-1).path, '/webhook/freshcare/request-supplement')
+  assert.equal(upstream.calls.at(-1).authorization, 'Basic c3RhZmY6c2VjcmV0')
+  assert.deepEqual(JSON.parse(upstream.calls.at(-1).body), {
+    ticket_id: 'FC-100',
+    supplement_request: '請提供商品外箱照片。',
+    review_note: '已確認商品外觀異常。',
+  })
+
   const csrfRejected = await fetch(`${sessionServer.baseUrl}/api/admin/assign-ticket`, {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },

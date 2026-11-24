@@ -1,11 +1,12 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, routerPushMock } = vi.hoisted(() => ({
+const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, requestSupplementMock, routerPushMock } = vi.hoisted(() => ({
   fetchTicketsMock: vi.fn(),
   fetchDetailMock: vi.fn(),
   startReviewMock: vi.fn(),
   assignTicketMock: vi.fn(),
+  requestSupplementMock: vi.fn(),
   routerPushMock: vi.fn(),
 }))
 
@@ -23,6 +24,7 @@ vi.mock('../src/services/adminTicketService', async () => {
     fetchAdminTicketDetail: fetchDetailMock,
     startAdminTicketReview: startReviewMock,
     assignAdminTicket: assignTicketMock,
+    requestAdminTicketSupplement: requestSupplementMock,
   }
 })
 
@@ -114,6 +116,85 @@ describe('admin ticket review action', () => {
     expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeUndefined()
     expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
     expect(confirmMock).not.toHaveBeenCalled()
+  })
+
+  it('sends a supplement request and refreshes the ticket list, detail, and waiting-customer history', async () => {
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = {
+      ...mockAdminTickets[0]!,
+      status: 'received' as const,
+      aiSuggestion: null,
+    }
+    const waitingCustomer = {
+      ...received,
+      status: 'waiting_customer' as const,
+      reviewNote: '已確認商品外觀異常。',
+      events: [{
+        id: 'EV-SUPPLEMENT',
+        title: '已要求顧客補件',
+        description: '請提供商品外箱照片。',
+        timestamp: '2026-11-24T04:00:00.000Z',
+        complete: true,
+      }],
+    }
+    fetchTicketsMock
+      .mockResolvedValueOnce([received])
+      .mockResolvedValueOnce([waitingCustomer])
+    fetchDetailMock
+      .mockResolvedValueOnce({ ticket: received, warnings: [] })
+      .mockResolvedValueOnce({ ticket: waitingCustomer, warnings: [] })
+    let resolveSupplement!: () => void
+    requestSupplementMock.mockImplementation(() => new Promise<void>((resolve) => { resolveSupplement = resolve }))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('已確認商品外觀異常。')
+    await wrapper.get('textarea[aria-label="要求顧客補件內容"]').setValue('請提供商品外箱照片。')
+    await wrapper.get('.admin-review-actions button:first-child').trigger('click')
+
+    expect(requestSupplementMock).toHaveBeenCalledWith(
+      received.id,
+      '請提供商品外箱照片。',
+      '已確認商品外觀異常。',
+    )
+    expect(wrapper.get('.admin-review-actions button:first-child').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.admin-review-actions button:first-child').text()).toContain('送出中')
+    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeDefined()
+    await wrapper.get('.admin-review-actions button:first-child').trigger('click')
+    expect(requestSupplementMock).toHaveBeenCalledTimes(1)
+
+    resolveSupplement()
+    await flushPromises()
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
+    expect(fetchDetailMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('待補充資料')
+    expect(wrapper.text()).toContain('已要求顧客補件')
+    expect(wrapper.text()).toContain('已要求顧客補件，工單狀態已更新為待補充資料。')
+  })
+
+  it('shows supplement backend failures without refreshing ticket data', async () => {
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = {
+      ...mockAdminTickets[0]!,
+      status: 'received' as const,
+      aiSuggestion: null,
+    }
+    fetchTicketsMock.mockResolvedValue([received])
+    fetchDetailMock.mockResolvedValue({ ticket: received, warnings: [] })
+    requestSupplementMock.mockRejectedValue(new Error('工單已不允許補件（HTTP 409）'))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    await wrapper.get('textarea[aria-label="要求顧客補件內容"]').setValue('請提供商品外箱照片。')
+    await wrapper.get('.admin-review-actions button:first-child').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('工單已不允許補件（HTTP 409）')
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
+    expect(fetchDetailMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.admin-review-actions button:first-child').attributes('disabled')).toBeUndefined()
   })
 
   it('polls until AI fields are complete, then refreshes the list, KPIs and latest detail', async () => {

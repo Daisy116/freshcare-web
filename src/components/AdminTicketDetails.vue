@@ -14,11 +14,15 @@ const props = defineProps<{
   assignLoading?: boolean
   assignError?: string
   assignSuccess?: string
+  supplementLoading?: boolean
+  supplementError?: string
+  supplementSuccess?: string
 }>()
 const emit = defineEmits<{
   retry: []
   startReview: []
   assignTicket: [payload: { ticketId: string; reviewDepartment: ReviewDepartment; reviewNote: string }]
+  requestSupplement: [payload: { ticketId: string; supplementRequest: string; reviewNote: string }]
 }>()
 
 type ReviewAction = 'request-info' | 'assign'
@@ -115,7 +119,7 @@ function isDuplicateAttempt(action: ReviewAction): boolean {
 }
 
 function attemptReviewAction(action: ReviewAction) {
-  if (props.assignLoading || !isReviewable.value) return
+  if (props.assignLoading || props.supplementLoading || !isReviewable.value) return
   formError.value = ''
   actionNotice.value = ''
 
@@ -128,12 +132,15 @@ function attemptReviewAction(action: ReviewAction) {
     return
   }
 
-  const signature = actionSignature(action)
-  if (isDuplicateAttempt(action)) return
+  if (action === 'assign' && isDuplicateAttempt(action)) return
 
   if (action === 'request-info') {
-    attemptedSignatures.value = { ...attemptedSignatures.value, [action]: signature }
-    actionNotice.value = '尚未串接審核 API，資料未送出，工單狀態不會變更。'
+    if (!props.ticket) return
+    emit('requestSupplement', {
+      ticketId: props.ticket.id,
+      supplementRequest: supplementContent.value.trim(),
+      reviewNote: reviewNote.value.trim(),
+    })
     return
   }
 
@@ -326,16 +333,16 @@ function formatDate(value: string): string {
           <div class="admin-review-actions">
             <button
               type="button"
-              :disabled="assignLoading || isDuplicateAttempt('request-info')"
+              :disabled="assignLoading || supplementLoading"
               @click="attemptReviewAction('request-info')"
-            >▧　要求補件</button>
+            ><span v-if="supplementLoading" class="loading-spinner" aria-hidden="true"></span>{{ supplementLoading ? '送出中…' : '▧　要求補件' }}</button>
             <button
               type="button"
-              :disabled="assignLoading || isDuplicateAttempt('assign')"
+              :disabled="assignLoading || supplementLoading || isDuplicateAttempt('assign')"
               @click="attemptReviewAction('assign')"
             ><span v-if="assignLoading" class="loading-spinner" aria-hidden="true"></span>{{ assignLoading ? '分派中…' : '✓　確認分派' }}</button>
           </div>
-          <p>要求補件尚未串接 API；確認分派會送出工單編號、部門與審核備註。</p>
+          <p>要求補件會送出補件內容與審核備註；確認分派會送出工單編號、部門與審核備註。</p>
         </div>
       </section>
       <p v-else class="admin-review-unavailable">
@@ -343,6 +350,8 @@ function formatDate(value: string): string {
       </p>
       <p v-if="assignError" class="admin-review-error" role="alert">{{ assignError }}</p>
       <p v-if="assignSuccess" class="admin-review-notice" role="status">{{ assignSuccess }}</p>
+      <p v-if="supplementError" class="admin-review-error" role="alert">{{ supplementError }}</p>
+      <p v-if="supplementSuccess" class="admin-review-notice" role="status">{{ supplementSuccess }}</p>
     </section>
 
     <section class="admin-detail-card admin-history">

@@ -15,6 +15,7 @@ import {
   fetchAdminTickets,
   filterAdminTickets,
   mockAdminTickets,
+  requestAdminTicketSupplement,
   startAdminTicketReview,
 } from '@/services/adminTicketService'
 import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus } from '@/types/adminTicket'
@@ -39,6 +40,9 @@ const reviewError = ref('')
 const assignLoading = ref(false)
 const assignError = ref('')
 const assignSuccess = ref('')
+const supplementLoading = ref(false)
+const supplementError = ref('')
+const supplementSuccess = ref('')
 const preserveSelectedTicketId = ref<string | null>(null)
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(true)
@@ -115,6 +119,8 @@ watch(
     detailController = null
     assignError.value = ''
     assignSuccess.value = ''
+    supplementError.value = ''
+    supplementSuccess.value = ''
     ticketDetail.value = null
     detailWarnings.value = []
     detailError.value = ''
@@ -296,6 +302,60 @@ async function assignSelectedTicket(payload: {
   }
 }
 
+async function requestTicketSupplement(payload: {
+  ticketId: string
+  supplementRequest: string
+  reviewNote: string
+}) {
+  if (assignLoading.value || supplementLoading.value) return
+  const ticketId = selectedTicketId.value
+  const ticket = tickets.value.find((item) => item.id === ticketId)
+  if (!ticketId || payload.ticketId !== ticketId || !ticket
+    || !['received', 'under_review'].includes(ticket.status)) {
+    supplementError.value = '目前選取的工單狀態不可要求補件，請重新載入工單資料。'
+    return
+  }
+  if (!payload.supplementRequest.trim()) {
+    supplementError.value = '請填寫要求顧客補充的內容。'
+    return
+  }
+  if (adminTicketsMode !== 'api') {
+    supplementError.value = 'Mock 模式不會呼叫補件 API，也不會修改展示工單。'
+    return
+  }
+
+  supplementLoading.value = true
+  supplementError.value = ''
+  supplementSuccess.value = ''
+  assignError.value = ''
+  assignSuccess.value = ''
+  preserveSelectedTicketId.value = ticketId
+  try {
+    await requestAdminTicketSupplement(ticketId, payload.supplementRequest, payload.reviewNote)
+    const refreshedTickets = await loadTickets()
+    if (!refreshedTickets) {
+      throw new Error(`補件 API 已成功，但重新載入工單列表失敗：${loadError.value}`)
+    }
+    const refreshedTicket = refreshedTickets.find((item) => item.id === ticketId)
+    if (!refreshedTicket) {
+      throw new Error('補件 API 已成功，但最新工單列表中找不到此工單。')
+    }
+    if (refreshedTicket.status !== 'waiting_customer') {
+      throw new Error(`補件 API 已成功，但最新工單狀態為「${getTicketStatusLabel(refreshedTicket.status)}」，尚未確認為待補充資料。`)
+    }
+    if (detailStatus.value !== 'ready' || ticketDetail.value?.id !== ticketId
+      || ticketDetail.value.status !== 'waiting_customer') {
+      throw new Error(`補件 API 已成功，但重新載入待補充資料狀態或處理歷程失敗：${detailError.value || '請稍後重試。'}`)
+    }
+    supplementSuccess.value = '已要求顧客補件，工單狀態已更新為待補充資料。'
+  } catch (cause) {
+    supplementError.value = cause instanceof Error ? cause.message : '要求補件時發生錯誤，請稍後重試。'
+  } finally {
+    preserveSelectedTicketId.value = null
+    supplementLoading.value = false
+  }
+}
+
 async function logout() {
   try {
     await logoutAdmin()
@@ -420,12 +480,16 @@ function resetFilters() {
             :assign-loading="assignLoading"
             :assign-error="assignError"
             :assign-success="assignSuccess"
+            :supplement-loading="supplementLoading"
+            :supplement-error="supplementError"
+            :supplement-success="supplementSuccess"
             @retry="retrySelectedDetail"
             @start-review="beginTicketReview"
             @assign-ticket="assignSelectedTicket"
+            @request-supplement="requestTicketSupplement"
           />
         </section>
-        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜AI 與分派功能不會修改展示工單。' : 'API 工單列表與詳情｜AI 分析及確認分派已串接服務；要求補件尚未串接。' }}</p>
+        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜AI 與審核操作不會修改展示工單。' : 'API 工單列表與詳情｜AI 分析、要求補件及確認分派已串接服務。' }}</p>
       </main>
     </div>
 

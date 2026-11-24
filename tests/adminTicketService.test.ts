@@ -184,6 +184,54 @@ describe('admin mock ticket data', () => {
       await expect(assignAdminTicket('CS-ASSIGN-001', '', '備註')).rejects.toThrow('請選擇負責部門')
     })
 
+    it('posts supplement request content and optional review note, requiring HTTP 200 and success true', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { requestAdminTicketSupplement } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      await expect(requestAdminTicketSupplement('CS-SUPPLEMENT-001', '請提供商品外箱照片', '已確認商品破損。'))
+        .resolves.toBeUndefined()
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
+      expect(url).toBe('/api/admin/request-supplement')
+      expect(options.method).toBe('POST')
+      expect(options.body).toBe(JSON.stringify({
+        ticket_id: 'CS-SUPPLEMENT-001',
+        supplement_request: '請提供商品外箱照片',
+        review_note: '已確認商品破損。',
+      }))
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('session-token')
+
+      const failures = [
+        [400, { message: '補件內容格式錯誤' }, '補件內容格式錯誤'],
+        [404, { error: '找不到工單' }, '找不到工單'],
+        [409, { detail: '工單狀態已變更' }, '工單狀態已變更'],
+        [200, { success: false, message: '無法要求補件' }, '無法要求補件'],
+      ] as const
+      for (const [status, payload, message] of failures) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status }))
+        const expectedMessage = status === 200 ? message : `${message}（HTTP ${status}）`
+        await expect(requestAdminTicketSupplement('CS-SUPPLEMENT-001', '請提供照片', '備註'))
+          .rejects.toThrow(expectedMessage)
+      }
+      fetchMock.mockResolvedValueOnce(new Response('補件服務暫時無法使用', { status: 503 }))
+      await expect(requestAdminTicketSupplement('CS-SUPPLEMENT-001', '請提供照片', '備註'))
+        .rejects.toThrow('補件服務暫時無法使用（HTTP 503）')
+
+      await expect(requestAdminTicketSupplement('CS-SUPPLEMENT-001', '   ', '備註'))
+        .rejects.toThrow('請填寫要求顧客補充的內容')
+      expect(fetchMock).toHaveBeenCalledTimes(8)
+    })
+
     it('rejects invalid counts and malformed tickets', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')

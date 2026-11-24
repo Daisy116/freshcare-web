@@ -88,7 +88,7 @@ describe('admin ticket details', () => {
     expect(wrapper.find('.admin-review-actions').text()).toContain('確認分派')
   })
 
-  it('validates supplement requests and emits assignments directly with the human-selected department', async () => {
+  it('validates and emits supplement requests, then emits assignments with the human-selected department', async () => {
     const wrapper = mount(AdminTicketDetails, {
       props: {
         ticket: { ...mockAdminTickets[0]!, status: 'received' as const, aiSuggestion: null },
@@ -101,8 +101,14 @@ describe('admin ticket details', () => {
 
     await wrapper.get('.admin-review-field textarea[aria-label="要求顧客補件內容"]').setValue('請提供商品外箱照片')
     await wrapper.get('.admin-review-actions button').trigger('click')
-    expect(wrapper.get('[role="status"]').text()).toContain('尚未串接審核 API')
-    expect(wrapper.get('.admin-review-actions button').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('requestSupplement')).toEqual([[
+      {
+        ticketId: mockAdminTickets[0]!.id,
+        supplementRequest: '請提供商品外箱照片',
+        reviewNote: '',
+      },
+    ]])
+    expect(wrapper.get('.admin-review-actions button').attributes('disabled')).toBeUndefined()
     expect(wrapper.emitted('startReview')).toBeUndefined()
 
     await wrapper.get('.admin-review-field select').setValue('客服部門')
@@ -115,6 +121,19 @@ describe('admin ticket details', () => {
       },
     ]])
     expect(wrapper.emitted('startReview')).toBeUndefined()
+  })
+
+  it('disables both review decisions while a supplement request is in flight', () => {
+    const wrapper = mount(AdminTicketDetails, {
+      props: {
+        ticket: { ...mockAdminTickets[0]!, status: 'received' as const },
+        detailStatus: 'ready',
+        supplementLoading: true,
+      },
+    })
+
+    expect(wrapper.findAll('.admin-review-actions button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.get('.admin-review-actions').text()).toContain('送出中')
   })
 
   it('requires a department for assignment and hides manual actions for unsupported statuses', async () => {
