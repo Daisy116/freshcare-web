@@ -11,6 +11,7 @@ import {
   assignAdminTicket,
   adminTicketsMode,
   calculateAdminTicketKpis,
+  closeAdminTicket,
   fetchAdminTicketDetail,
   fetchAdminTickets,
   filterAdminTickets,
@@ -43,6 +44,9 @@ const assignSuccess = ref('')
 const supplementLoading = ref(false)
 const supplementError = ref('')
 const supplementSuccess = ref('')
+const closeLoading = ref(false)
+const closeError = ref('')
+const closeSuccess = ref('')
 const preserveSelectedTicketId = ref<string | null>(null)
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(true)
@@ -121,6 +125,8 @@ watch(
     assignSuccess.value = ''
     supplementError.value = ''
     supplementSuccess.value = ''
+    closeError.value = ''
+    closeSuccess.value = ''
     ticketDetail.value = null
     detailWarnings.value = []
     detailError.value = ''
@@ -356,6 +362,58 @@ async function requestTicketSupplement(payload: {
   }
 }
 
+async function closeSelectedTicket(payload: { ticketId: string; reviewNote: string }) {
+  if (assignLoading.value || supplementLoading.value || closeLoading.value) return
+  const ticketId = selectedTicketId.value
+  const ticket = tickets.value.find((item) => item.id === ticketId)
+  if (!ticketId || payload.ticketId !== ticketId || !ticket
+    || !['received', 'under_review'].includes(ticket.status)) {
+    closeError.value = '目前選取的工單狀態不可直接結案，請重新載入工單資料。'
+    return
+  }
+  if (!payload.reviewNote.trim()) {
+    closeError.value = '直接結案前請填寫審核意見與處置說明。'
+    return
+  }
+  if (adminTicketsMode !== 'api') {
+    closeError.value = 'Mock 模式不會呼叫結案 API，也不會修改展示工單。'
+    return
+  }
+
+  closeLoading.value = true
+  closeError.value = ''
+  closeSuccess.value = ''
+  assignError.value = ''
+  assignSuccess.value = ''
+  supplementError.value = ''
+  supplementSuccess.value = ''
+  preserveSelectedTicketId.value = ticketId
+  try {
+    await closeAdminTicket(ticketId, payload.reviewNote)
+    const refreshedTickets = await loadTickets()
+    if (!refreshedTickets) {
+      throw new Error(`結案 API 已成功，但重新載入工單列表失敗：${loadError.value}`)
+    }
+    const refreshedTicket = refreshedTickets.find((item) => item.id === ticketId)
+    if (!refreshedTicket) {
+      throw new Error('結案 API 已成功，但最新工單列表中找不到此工單。')
+    }
+    if (refreshedTicket.status !== 'closed') {
+      throw new Error(`結案 API 已成功，但最新工單狀態為「${getTicketStatusLabel(refreshedTicket.status)}」，尚未確認為已結案。`)
+    }
+    if (detailStatus.value !== 'ready' || ticketDetail.value?.id !== ticketId
+      || ticketDetail.value.status !== 'closed') {
+      throw new Error(`結案 API 已成功，但重新載入結案詳情或處理歷程失敗：${detailError.value || '請稍後重試。'}`)
+    }
+    closeSuccess.value = '工單已成功結案，最新工單詳情與處理歷程已載入。'
+  } catch (cause) {
+    closeError.value = cause instanceof Error ? cause.message : '直接結案時發生錯誤，請稍後重試。'
+  } finally {
+    preserveSelectedTicketId.value = null
+    closeLoading.value = false
+  }
+}
+
 async function logout() {
   try {
     await logoutAdmin()
@@ -483,13 +541,16 @@ function resetFilters() {
             :supplement-loading="supplementLoading"
             :supplement-error="supplementError"
             :supplement-success="supplementSuccess"
+            :close-loading="closeLoading"
+            :close-error="closeError"
+            :close-success="closeSuccess"
             @retry="retrySelectedDetail"
             @start-review="beginTicketReview"
             @assign-ticket="assignSelectedTicket"
             @request-supplement="requestTicketSupplement"
+            @close-ticket="closeSelectedTicket"
           />
         </section>
-        <p class="admin-demo-notice">{{ adminTicketsMode === 'mock' ? 'Mock 展示資料｜AI 與審核操作不會修改展示工單。' : 'API 工單列表與詳情｜AI 分析、要求補件及確認分派已串接服務。' }}</p>
       </main>
     </div>
 

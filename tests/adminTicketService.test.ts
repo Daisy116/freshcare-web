@@ -232,6 +232,55 @@ describe('admin mock ticket data', () => {
       expect(fetchMock).toHaveBeenCalledTimes(8)
     })
 
+    it('closes a ticket with the required review note and only accepts HTTP 200 with success true', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { closeAdminTicket } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      await expect(closeAdminTicket('CS-CLOSE-001', '已確認案件已妥善處理。')).resolves.toBeUndefined()
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
+      expect(url).toBe('/api/admin/close-ticket')
+      expect(options.method).toBe('POST')
+      expect(options.body).toBe(JSON.stringify({
+        ticket_id: 'CS-CLOSE-001',
+        review_note: '已確認案件已妥善處理。',
+      }))
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('session-token')
+
+      const failures = [
+        [400, { message: '結案說明不完整' }, '結案說明不完整'],
+        [404, { error: '找不到工單' }, '找不到工單'],
+        [409, { detail: '工單狀態已變更' }, '工單狀態已變更'],
+        [200, { success: false, message: '目前無法結案' }, '目前無法結案'],
+      ] as const
+      for (const [status, payload, message] of failures) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status }))
+        const expectedMessage = status === 200 ? message : `${message}（HTTP ${status}）`
+        await expect(closeAdminTicket('CS-CLOSE-001', '結案說明'))
+          .rejects.toThrow(expectedMessage)
+      }
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 201 }))
+      await expect(closeAdminTicket('CS-CLOSE-001', '結案說明'))
+        .rejects.toThrow('直接結案失敗（HTTP 201）')
+
+      fetchMock.mockResolvedValueOnce(new Response('結案服務暫時無法使用', { status: 503 }))
+      await expect(closeAdminTicket('CS-CLOSE-001', '結案說明'))
+        .rejects.toThrow('結案服務暫時無法使用（HTTP 503）')
+      await expect(closeAdminTicket('CS-CLOSE-001', '   '))
+        .rejects.toThrow('直接結案前請填寫審核意見與處置說明')
+      expect(fetchMock).toHaveBeenCalledTimes(9)
+    })
+
     it('rejects invalid counts and malformed tickets', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
@@ -245,6 +294,33 @@ describe('admin mock ticket data', () => {
         count: 1,
         tickets: [{ ticket_id: 'bad', ticket_status: 'received', created_at: 'invalid-date' }],
       })).toThrow('日期欄位')
+    })
+
+    it('preserves close note and timestamp from the ticket list when detail fields are omitted', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const { parseAdminTicketDetailResponse } = await import('../src/services/adminTicketService')
+      const fallback = {
+        ...mockAdminTickets[0]!,
+        status: 'closed' as const,
+        reviewNote: '已確認案件已妥善處理。',
+        closedAt: '2026-11-24T08:30:00.000Z',
+      }
+
+      const detail = parseAdminTicketDetailResponse({
+        success: true,
+        ticket: {
+          ticket_id: fallback.id,
+          ticket_status: 'closed',
+          created_at: fallback.createdAt,
+        },
+        events: [],
+      }, fallback)
+
+      expect(detail.ticket.reviewNote).toBe('已確認案件已妥善處理。')
+      expect(detail.ticket.closedAt).toBe('2026-11-24T08:30:00.000Z')
     })
 
     it('parses all AI analysis fields returned by the existing ticket API', async () => {

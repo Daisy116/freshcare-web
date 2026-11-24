@@ -1,12 +1,13 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, requestSupplementMock, routerPushMock } = vi.hoisted(() => ({
+const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, requestSupplementMock, closeTicketMock, routerPushMock } = vi.hoisted(() => ({
   fetchTicketsMock: vi.fn(),
   fetchDetailMock: vi.fn(),
   startReviewMock: vi.fn(),
   assignTicketMock: vi.fn(),
   requestSupplementMock: vi.fn(),
+  closeTicketMock: vi.fn(),
   routerPushMock: vi.fn(),
 }))
 
@@ -25,6 +26,7 @@ vi.mock('../src/services/adminTicketService', async () => {
     startAdminTicketReview: startReviewMock,
     assignAdminTicket: assignTicketMock,
     requestAdminTicketSupplement: requestSupplementMock,
+    closeAdminTicket: closeTicketMock,
   }
 })
 
@@ -35,7 +37,7 @@ describe('admin ticket review action', () => {
     wrapper?.unmount()
     wrapper = undefined
     vi.useRealTimers()
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.resetModules()
     vi.restoreAllMocks()
   })
@@ -76,12 +78,12 @@ describe('admin ticket review action', () => {
     expect(wrapper.get('select[aria-label="負責部門"]').element).toHaveProperty('value', '品質部門')
     await wrapper.get('select[aria-label="負責部門"]').setValue('物流部門')
     await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('請優先處理配送破損。')
-    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+    await wrapper.get('.admin-action-assign').trigger('click')
 
     expect(confirmMock).not.toHaveBeenCalled()
     expect(assignTicketMock).toHaveBeenCalledWith(received.id, '物流部門', '請優先處理配送破損。')
-    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.admin-review-actions button:last-child').text()).toContain('分派中')
+    expect(wrapper.get('.admin-action-assign').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.admin-action-assign').text()).toContain('分派中')
 
     resolveAssign()
     await flushPromises()
@@ -109,11 +111,11 @@ describe('admin ticket review action', () => {
     wrapper = mount(AdminDashboardPage)
     await flushPromises()
     await wrapper.get('select[aria-label="負責部門"]').setValue('客服部門')
-    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+    await wrapper.get('.admin-action-assign').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toContain('工單狀態已變更（HTTP 409）')
-    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.admin-action-assign').attributes('disabled')).toBeUndefined()
     expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
     expect(confirmMock).not.toHaveBeenCalled()
   })
@@ -160,7 +162,7 @@ describe('admin ticket review action', () => {
     )
     expect(wrapper.get('.admin-review-actions button:first-child').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.admin-review-actions button:first-child').text()).toContain('送出中')
-    expect(wrapper.get('.admin-review-actions button:last-child').attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('.admin-review-actions button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
     await wrapper.get('.admin-review-actions button:first-child').trigger('click')
     expect(requestSupplementMock).toHaveBeenCalledTimes(1)
 
@@ -195,6 +197,89 @@ describe('admin ticket review action', () => {
     expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
     expect(fetchDetailMock).toHaveBeenCalledTimes(1)
     expect(wrapper.get('.admin-review-actions button:first-child').attributes('disabled')).toBeUndefined()
+  })
+
+  it('closes an eligible ticket and refreshes the list, detail, and close summary', async () => {
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = {
+      ...mockAdminTickets[0]!,
+      status: 'received' as const,
+      aiSuggestion: null,
+    }
+    const closed = {
+      ...received,
+      status: 'closed' as const,
+      reviewNote: '已確認案件已妥善處理。',
+      closedAt: '2026-11-24T08:30:00.000Z',
+      events: [{
+        id: 'EV-CLOSE',
+        title: '工單已結案',
+        description: '專員已完成案件處理。',
+        timestamp: '2026-11-24T08:30:00.000Z',
+        complete: true,
+      }],
+    }
+    fetchTicketsMock
+      .mockResolvedValueOnce([received])
+      .mockResolvedValueOnce([closed])
+    fetchDetailMock
+      .mockResolvedValueOnce({ ticket: received, warnings: [] })
+      .mockResolvedValueOnce({ ticket: closed, warnings: [] })
+    let resolveClose!: () => void
+    closeTicketMock.mockImplementation(() => new Promise<void>((resolve) => { resolveClose = resolve }))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('已確認案件已妥善處理。')
+    await wrapper.get('.admin-action-close').trigger('click')
+
+    expect(closeTicketMock).toHaveBeenCalledWith(received.id, '已確認案件已妥善處理。')
+    expect(wrapper.findAll('.admin-review-actions button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.get('.admin-action-close').text()).toContain('結案中')
+    await wrapper.get('.admin-action-close').trigger('click')
+    expect(closeTicketMock).toHaveBeenCalledTimes(1)
+
+    resolveClose()
+    await flushPromises()
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
+    expect(fetchDetailMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.admin-close-summary').text()).toContain('已結案')
+    expect(wrapper.get('.admin-close-summary').text()).toContain('已確認案件已妥善處理。')
+    expect(wrapper.get('.admin-close-summary').text()).toContain('2026/11/24')
+    expect(wrapper.get('[role="status"]').text()).toContain('工單已成功結案')
+    expect(wrapper.text()).toContain('工單已結案')
+  })
+
+  it('shows close API failures and rejects attempts for tickets outside eligible statuses', async () => {
+    const { mockAdminTickets } = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+    const received = { ...mockAdminTickets[0]!, status: 'received' as const, aiSuggestion: null }
+    const assigned = { ...received, id: 'CS-ASSIGNED-NOT-CLOSABLE', status: 'assigned' as const }
+    fetchTicketsMock.mockResolvedValue([received, assigned])
+    fetchDetailMock
+      .mockResolvedValueOnce({ ticket: received, warnings: [] })
+      .mockResolvedValueOnce({ ticket: assigned, warnings: [] })
+    closeTicketMock.mockRejectedValueOnce(new Error('工單狀態已變更（HTTP 409）'))
+
+    const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
+    const { default: AdminTicketDetails } = await import('../src/components/AdminTicketDetails.vue')
+    wrapper = mount(AdminDashboardPage)
+    await flushPromises()
+    await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('結案說明')
+    await wrapper.get('.admin-action-close').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('工單狀態已變更（HTTP 409）')
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(1)
+
+    await wrapper.findAll('.admin-ticket-table tbody tr')[1].trigger('click')
+    await flushPromises()
+    await wrapper.findComponent(AdminTicketDetails).vm.$emit('closeTicket', {
+      ticketId: assigned.id,
+      reviewNote: '結案說明',
+    })
+    await flushPromises()
+    expect(closeTicketMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[role="alert"]').text()).toContain('不可直接結案')
   })
 
   it('polls until AI fields are complete, then refreshes the list, KPIs and latest detail', async () => {

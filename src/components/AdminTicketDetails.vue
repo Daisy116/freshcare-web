@@ -17,15 +17,19 @@ const props = defineProps<{
   supplementLoading?: boolean
   supplementError?: string
   supplementSuccess?: string
+  closeLoading?: boolean
+  closeError?: string
+  closeSuccess?: string
 }>()
 const emit = defineEmits<{
   retry: []
   startReview: []
   assignTicket: [payload: { ticketId: string; reviewDepartment: ReviewDepartment; reviewNote: string }]
   requestSupplement: [payload: { ticketId: string; supplementRequest: string; reviewNote: string }]
+  closeTicket: [payload: { ticketId: string; reviewNote: string }]
 }>()
 
-type ReviewAction = 'request-info' | 'assign'
+type ReviewAction = 'request-info' | 'assign' | 'direct-close'
 type ReviewDepartment = '' | '品質部門' | '物流部門' | '客服部門'
 
 const isReviewable = computed(() => props.ticket?.status === 'received' || props.ticket?.status === 'under_review')
@@ -60,7 +64,7 @@ const reviewNote = ref('')
 const supplementContent = ref('')
 const formError = ref('')
 const actionNotice = ref('')
-const attemptedSignatures = ref<Record<ReviewAction, string>>({ 'request-info': '', assign: '' })
+const attemptedSignatures = ref<Record<ReviewAction, string>>({ 'request-info': '', assign: '', 'direct-close': '' })
 
 function suggestedDepartment(value: string | undefined): ReviewDepartment {
   const department = value?.trim().toLocaleLowerCase() ?? ''
@@ -78,7 +82,7 @@ watch(
     supplementContent.value = ''
     formError.value = ''
     actionNotice.value = ''
-    attemptedSignatures.value = { 'request-info': '', assign: '' }
+    attemptedSignatures.value = { 'request-info': '', assign: '', 'direct-close': '' }
   },
   { immediate: true },
 )
@@ -95,7 +99,7 @@ watch(
 watch([selectedDepartment, reviewNote, supplementContent], () => {
   formError.value = ''
   actionNotice.value = ''
-  attemptedSignatures.value = { 'request-info': '', assign: '' }
+  attemptedSignatures.value = { 'request-info': '', assign: '', 'direct-close': '' }
 })
 
 watch(
@@ -119,7 +123,7 @@ function isDuplicateAttempt(action: ReviewAction): boolean {
 }
 
 function attemptReviewAction(action: ReviewAction) {
-  if (props.assignLoading || props.supplementLoading || !isReviewable.value) return
+  if (props.assignLoading || props.supplementLoading || props.closeLoading || !isReviewable.value) return
   formError.value = ''
   actionNotice.value = ''
 
@@ -131,8 +135,21 @@ function attemptReviewAction(action: ReviewAction) {
     formError.value = '請先選擇負責部門。'
     return
   }
+  if (action === 'direct-close' && !reviewNote.value.trim()) {
+    formError.value = '直接結案前請填寫審核意見與處置說明。'
+    return
+  }
 
   if (action === 'assign' && isDuplicateAttempt(action)) return
+
+  if (action === 'direct-close') {
+    if (!props.ticket) return
+    emit('closeTicket', {
+      ticketId: props.ticket.id,
+      reviewNote: reviewNote.value.trim(),
+    })
+    return
+  }
 
   if (action === 'request-info') {
     if (!props.ticket) return
@@ -271,7 +288,20 @@ function formatDate(value: string): string {
 
       </section>
 
-      <section v-if="ticket.status === 'assigned'" class="admin-review-summary">
+      <section v-if="ticket.status === 'closed'" class="admin-close-summary">
+        <header class="admin-review-heading"><h4>結案結果摘要</h4><span class="admin-decision-adoption is-adopted">已結案</span></header>
+        <dl class="admin-decision-meta">
+          <div>
+            <dt>人工結案說明</dt>
+            <dd>{{ ticket.reviewNote?.trim() || '未提供人工結案說明' }}</dd>
+          </div>
+          <div>
+            <dt>結案時間</dt>
+            <dd>{{ ticket.closedAt ? formatDate(ticket.closedAt) : '未提供' }}</dd>
+          </div>
+        </dl>
+      </section>
+      <section v-else-if="ticket.status === 'assigned'" class="admin-review-summary">
         <header class="admin-review-heading">
           <h4>審核結果摘要</h4>
           <span class="admin-decision-adoption" :class="{ 'is-adopted': adoptedAiSuggestion }">{{ aiAdoptionLabel }}</span>
@@ -310,7 +340,7 @@ function formatDate(value: string): string {
           </select>
         </label>
         <label class="admin-review-field">
-          <span>審核意見與處置說明</span>
+          <span>審核意見與處置說明 <small>(執行「直接結案」時必填)</small></span>
           <textarea
             v-model="reviewNote"
             aria-label="審核意見與處置說明"
@@ -318,7 +348,7 @@ function formatDate(value: string): string {
           ></textarea>
         </label>
         <label class="admin-review-field">
-          <span>要求顧客補件內容 <small>執行「要求補件」時必填</small></span>
+          <span>要求顧客補件內容 <small>(執行「要求補件」時必填)</small></span>
           <textarea
             v-model="supplementContent"
             aria-label="要求顧客補件內容"
@@ -332,15 +362,23 @@ function formatDate(value: string): string {
           <h5>提交決策</h5>
           <div class="admin-review-actions">
             <button
+              class="admin-action-request"
               type="button"
-              :disabled="assignLoading || supplementLoading"
+              :disabled="assignLoading || supplementLoading || closeLoading"
               @click="attemptReviewAction('request-info')"
             ><span v-if="supplementLoading" class="loading-spinner" aria-hidden="true"></span>{{ supplementLoading ? '送出中…' : '▧　要求補件' }}</button>
             <button
+              class="admin-action-assign"
               type="button"
-              :disabled="assignLoading || supplementLoading || isDuplicateAttempt('assign')"
+              :disabled="assignLoading || supplementLoading || closeLoading || isDuplicateAttempt('assign')"
               @click="attemptReviewAction('assign')"
             ><span v-if="assignLoading" class="loading-spinner" aria-hidden="true"></span>{{ assignLoading ? '分派中…' : '✓　確認分派' }}</button>
+            <button
+              class="admin-action-close"
+              type="button"
+              :disabled="assignLoading || supplementLoading || closeLoading"
+              @click="attemptReviewAction('direct-close')"
+            ><span v-if="closeLoading" class="loading-spinner" aria-hidden="true"></span>{{ closeLoading ? '結案中…' : '✓　直接結案' }}</button>
           </div>
           <p>要求補件會送出補件內容與審核備註；確認分派會送出工單編號、部門與審核備註。</p>
         </div>
@@ -352,6 +390,8 @@ function formatDate(value: string): string {
       <p v-if="assignSuccess" class="admin-review-notice" role="status">{{ assignSuccess }}</p>
       <p v-if="supplementError" class="admin-review-error" role="alert">{{ supplementError }}</p>
       <p v-if="supplementSuccess" class="admin-review-notice" role="status">{{ supplementSuccess }}</p>
+      <p v-if="closeError" class="admin-review-error" role="alert">{{ closeError }}</p>
+      <p v-if="closeSuccess" class="admin-review-notice" role="status">{{ closeSuccess }}</p>
     </section>
 
     <section class="admin-detail-card admin-history">

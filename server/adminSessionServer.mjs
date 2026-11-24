@@ -13,6 +13,7 @@ const ADMIN_API_PATHS = new Map([
   ['/tickets/start-review', '/webhook/freshcare/admin/tickets/start-review'],
   ['/assign-ticket', '/webhook/freshcare/assign-ticket'],
   ['/request-supplement', '/webhook/freshcare/request-supplement'],
+  ['/close-ticket', '/webhook/freshcare/close-ticket'],
   ['/ticket-detail', '/webhook/freshcare/admin/ticket-detail'],
 ])
 

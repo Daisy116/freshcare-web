@@ -86,6 +86,8 @@ describe('admin ticket details', () => {
     expect(wrapper.get('textarea[aria-label="審核意見與處置說明"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.admin-review-actions').text()).toContain('要求補件')
     expect(wrapper.find('.admin-review-actions').text()).toContain('確認分派')
+    expect(wrapper.find('.admin-review-actions').text()).toContain('直接結案')
+    expect(wrapper.findAll('.admin-review-actions button')).toHaveLength(3)
   })
 
   it('validates and emits supplement requests, then emits assignments with the human-selected department', async () => {
@@ -112,7 +114,7 @@ describe('admin ticket details', () => {
     expect(wrapper.emitted('startReview')).toBeUndefined()
 
     await wrapper.get('.admin-review-field select').setValue('客服部門')
-    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+    await wrapper.get('.admin-action-assign').trigger('click')
     expect(wrapper.emitted('assignTicket')).toEqual([[
       {
         ticketId: mockAdminTickets[0]!.id,
@@ -136,6 +138,56 @@ describe('admin ticket details', () => {
     expect(wrapper.get('.admin-review-actions').text()).toContain('送出中')
   })
 
+  it('validates and emits direct closure using only the review note', async () => {
+    const wrapper = mount(AdminTicketDetails, {
+      props: {
+        ticket: { ...mockAdminTickets[0]!, status: 'received' as const, aiSuggestion: null },
+        detailStatus: 'ready',
+      },
+    })
+
+    expect(wrapper.findAll('.admin-review-actions button')).toHaveLength(3)
+    await wrapper.get('.admin-action-close').trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('直接結案前請填寫')
+    expect(wrapper.emitted('assignTicket')).toBeUndefined()
+    expect(wrapper.emitted('requestSupplement')).toBeUndefined()
+
+    await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('已確認案件已妥善處理。')
+    await wrapper.get('.admin-action-close').trigger('click')
+    expect(wrapper.emitted('closeTicket')).toEqual([[
+      {
+        ticketId: mockAdminTickets[0]!.id,
+        reviewNote: '已確認案件已妥善處理。',
+      },
+    ]])
+    expect(wrapper.find('.admin-review-actions').exists()).toBe(true)
+    expect(wrapper.emitted('assignTicket')).toBeUndefined()
+    expect(wrapper.emitted('requestSupplement')).toBeUndefined()
+
+    await wrapper.setProps({
+      ticket: { ...mockAdminTickets[0]!, status: 'under_review' as const, aiSuggestion: null },
+    })
+    expect(wrapper.findAll('.admin-review-actions button')).toHaveLength(3)
+  })
+
+  it('shows a close summary with the reviewer note and closed_at timestamp', () => {
+    const ticket = {
+      ...mockAdminTickets[0]!,
+      status: 'closed' as const,
+      reviewNote: '已聯繫顧客並完成退款處理。',
+      closedAt: '2026-11-24T08:30:00.000Z',
+    }
+    const wrapper = mount(AdminTicketDetails, {
+      props: { ticket, detailStatus: 'ready' },
+    })
+
+    expect(wrapper.get('.admin-close-summary').text()).toContain('結案結果摘要')
+    expect(wrapper.get('.admin-close-summary').text()).toContain('已聯繫顧客並完成退款處理。')
+    expect(wrapper.get('.admin-close-summary').text()).toContain('結案時間')
+    expect(wrapper.get('.admin-close-summary').text()).toContain('2026/11/24')
+    expect(wrapper.find('.admin-review-actions').exists()).toBe(false)
+  })
+
   it('requires a department for assignment and hides manual actions for unsupported statuses', async () => {
     const wrapper = mount(AdminTicketDetails, {
       props: {
@@ -144,7 +196,7 @@ describe('admin ticket details', () => {
       },
     })
 
-    await wrapper.get('.admin-review-actions button:last-child').trigger('click')
+    await wrapper.get('.admin-action-assign').trigger('click')
     expect(wrapper.get('[role="alert"]').text()).toContain('選擇負責部門')
 
     await wrapper.setProps({ ticket: { ...mockAdminTickets[0]!, status: 'waiting_customer' as const } })

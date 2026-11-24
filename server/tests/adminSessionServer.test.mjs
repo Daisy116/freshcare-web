@@ -160,6 +160,24 @@ test('protects management APIs and persists an encrypted session across backend 
     review_note: '已確認商品外觀異常。',
   })
 
+  const closeTicket = await fetch(`${sessionServer.baseUrl}/api/admin/close-ticket`, {
+    method: 'POST',
+    headers: {
+      Origin: appOrigin,
+      'X-CSRF-Token': loginBody.csrfToken,
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+    },
+    body: JSON.stringify({ ticket_id: 'FC-100', review_note: '已確認案件已妥善處理。' }),
+  })
+  assert.equal(closeTicket.status, 200)
+  assert.equal(upstream.calls.at(-1).path, '/webhook/freshcare/close-ticket')
+  assert.equal(upstream.calls.at(-1).authorization, 'Basic c3RhZmY6c2VjcmV0')
+  assert.deepEqual(JSON.parse(upstream.calls.at(-1).body), {
+    ticket_id: 'FC-100',
+    review_note: '已確認案件已妥善處理。',
+  })
+
   const csrfRejected = await fetch(`${sessionServer.baseUrl}/api/admin/assign-ticket`, {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
