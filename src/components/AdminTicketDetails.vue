@@ -47,9 +47,10 @@ function normalizedDepartment(value: string): string {
 const adoptedAiSuggestion = computed(() => Boolean(aiDepartment.value
   && assignedDepartment.value
   && normalizedDepartment(aiDepartment.value) === normalizedDepartment(assignedDepartment.value)))
-const aiAdoptionLabel = computed(() => aiDepartment.value
-  ? adoptedAiSuggestion.value ? '✓ 已採納 AI 建議' : '人工調整，未採納 AI 建議'
-  : props.ticket?.aiSuggestion ? '無 AI 部門建議可供比較' : '未使用 AI 建議，由人工決定')
+const aiAdoptionLabel = computed(() => {
+  if (!props.ticket?.aiSuggestion) return '直接人工分派'
+  return aiDepartment.value && adoptedAiSuggestion.value ? '已採納 AI 建議' : '人工已調整'
+})
 const selectedDepartment = ref<ReviewDepartment>('')
 const reviewNote = ref('')
 const supplementContent = ref('')
@@ -231,11 +232,12 @@ function formatDate(value: string): string {
       <section class="admin-ai-card">
         <h4><span aria-hidden="true">✦</span>AI 智能語意分析與分類建議</h4>
         <template v-if="ticket.aiSuggestion">
-          <div class="admin-ai-row"><span>建議歸屬類別</span><strong>{{ getAiCategoryLabel(ticket.aiSuggestion.category) }}</strong></div>
-          <div class="admin-ai-row"><span>建議負責部門</span><strong>{{ ticket.aiSuggestion.department }}</strong></div>
-          <div v-if="ticket.aiSuggestion.priority" class="admin-ai-row"><span>建議優先級</span><strong>{{ ticket.aiSuggestion.priority === 'high' ? '高' : ticket.aiSuggestion.priority === 'medium' ? '中' : '低' }}</strong></div>
-          <div v-if="ticket.aiSuggestion.reason" class="admin-ai-row"><span>AI 分析原因</span><strong>{{ ticket.aiSuggestion.reason }}</strong></div>
-          <div v-if="ticket.aiSuggestion.action" class="admin-ai-row"><span>建議處置方向</span><strong>{{ ticket.aiSuggestion.action }}</strong></div>
+          <dl class="admin-ai-table">
+            <div class="admin-ai-row"><dt>建議歸屬類別</dt><dd>{{ getAiCategoryLabel(ticket.aiSuggestion.category) || '未提供' }}</dd></div>
+            <div class="admin-ai-row"><dt>建議負責部門</dt><dd>{{ ticket.aiSuggestion.department || '未提供' }}</dd></div>
+            <div class="admin-ai-row"><dt>建議優先級</dt><dd>{{ ticket.aiSuggestion.priority ? ticket.aiSuggestion.priority === 'high' ? '高' : ticket.aiSuggestion.priority === 'medium' ? '中' : '低' : '未提供' }}</dd></div>
+            <div class="admin-ai-row"><dt>AI 分析原因</dt><dd>{{ ticket.aiSuggestion.reason || '未提供' }}</dd></div>
+          </dl>
         </template>
 
         <button
@@ -263,7 +265,10 @@ function formatDate(value: string): string {
       </section>
 
       <section v-if="ticket.status === 'assigned'" class="admin-review-summary">
-        <header class="admin-review-heading"><h4>審核結果摘要</h4><span>AI vs 人工決策</span></header>
+        <header class="admin-review-heading">
+          <h4>審核結果摘要</h4>
+          <span class="admin-decision-adoption" :class="{ 'is-adopted': adoptedAiSuggestion }">{{ aiAdoptionLabel }}</span>
+        </header>
         <div class="admin-decision-comparison">
           <article>
             <span class="admin-decision-label">AI 建議部門</span>
@@ -275,9 +280,6 @@ function formatDate(value: string): string {
             <strong>{{ assignedDepartment || '未提供分派部門' }}</strong>
           </article>
         </div>
-        <p class="admin-decision-adoption" :class="{ 'is-adopted': adoptedAiSuggestion }">
-          {{ aiAdoptionLabel }}
-        </p>
         <dl class="admin-decision-meta">
           <div>
             <dt>人工備註</dt>

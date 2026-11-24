@@ -2,13 +2,15 @@ import { mount, type VueWrapper, flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminLoginPage from '../src/pages/AdminLoginPage.vue'
 
-const { loginAdminMock, routerPushMock } = vi.hoisted(() => ({
+const { loginAdminMock, routerPushMock, routeMock } = vi.hoisted(() => ({
   loginAdminMock: vi.fn(),
   routerPushMock: vi.fn(),
+  routeMock: { query: {} as Record<string, string> },
 }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPushMock }),
+  useRoute: () => routeMock,
 }))
 
 vi.mock('../src/services/adminAuthService', () => ({

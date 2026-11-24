@@ -16,8 +16,17 @@ FreshCare 是一個繁體中文生鮮電商客服前台，提供商品問題反�
 
 ```bash
 npm ci
-npm run dev
 ```
+
+使用 API 模式時，將 `.env.example` 複製為被 Git 忽略的 `.env.local`，設定 Session 金鑰後以單一指令啟動前端與 Session API（不要將密鑰放入已追蹤的 `.env.development`）：
+
+```bash
+openssl rand -hex 32
+# 將產生的值填入 .env.local 的 ADMIN_SESSION_SECRET
+npm run dev:all
+```
+
+純前端 Mock 展示仍可單獨執行 `npm run dev`。Session API 預設監聽 `3001`，Vite 開發伺服器預設使用 `5173`，n8n 預設使用 `5678`；各埠號與 n8n 網址可透過環境變數調整。
 
 開發伺服器預設使用 `/` base path。常用檢查指令：
 
@@ -76,11 +85,27 @@ GitHub Pages 建置時不論環境變數設定為何，一律使用 Mock 提交�
 
 `/#/admin/login` 使用 `src/services/adminAuthService.ts` 驗證登入，成功後進入 `/#/admin/dashboard`。後台提供 Stitch 儀表板版型、工單佇列搜尋／篩選、依工單資料動態計算的 KPI、工單詳情與事件歷程；未分析案件顯示「等待 AI 分析」。人工覆核、改部門、要求補件及結案功能為停用展示按鈕，不會改動資料。
 
-本機 `.env.development` 設定 `VITE_ADMIN_AUTH_MODE=api`；頁面以 `POST /api/admin/login` 傳送 HTTP Basic `Authorization` 標頭，由 Vite 代理到 `http://localhost:5678/webhook/freshcare/admin/login`。請先啟動本機 n8n 並啟用該 Webhook；帳密只在登入頁記憶體及 Service 模組記憶體中短暫存在，頁面重新整理即登出，登入成功後清空表單。
+已追蹤的 `.env.development` 預設啟用管理 API 模式；請在被 Git 忽略的 `.env.local` 提供以下伺服器端環境變數：
 
-共用 `adminApiFetch('/api/admin/...')` 會附上登入時使用的相同 Basic Authorization，未登入時拒絕發出管理 API 請求。正式建置（包括 GitHub Pages）一律強制 Mock，不連線登入 API；Mock 模式任意非空帳密即可進入展示頁，沒有身分驗證或資料存取保護。不得將正式帳密或 API Secret 寫入前端程式碼或環境變數。正式部署仍須搭配可信任後端與適當工作階段／權限保護；純前端記憶體驗證不能保護後端資源。
+```dotenv
+ADMIN_SESSION_SECRET=<至少 32 字元的隨機密鑰>
+ADMIN_SESSION_DB_PATH=./data/admin-sessions.sqlite
+ADMIN_SESSION_TTL_HOURS=8
+ADMIN_SESSION_COOKIE_SECURE=false
+ADMIN_APP_ORIGIN=http://localhost:5173
+ADMIN_SESSION_HOST=127.0.0.1
+ADMIN_SESSION_TRUST_PROXY=false
+SESSION_API_PORT=3001
+N8N_BASE_URL=http://localhost:5678
+```
 
-後台工單列表本機預設由 `.env.development` 的 `VITE_ADMIN_TICKETS_MODE=api` 啟用，使用 `GET /api/admin/tickets` 並由 Vite 代理至 `http://localhost:5678/webhook/freshcare/admin/tickets`；請先以 API 模式登入，列表請求會沿用同一 Basic Authorization。回應格式為 `{ success: true, count, tickets }`。設定 `VITE_ADMIN_TICKETS_MODE=mock` 可切回列表 Mock；正式建置強制使用 Mock。此階段僅接入列表與 KPI，API 模式下右側詳情會明確顯示尚未串接，不會混入 Mock 顧客資料。
+Session API 會將登入帳密僅用於呼叫現有 `POST /webhook/freshcare/admin/login`；瀏覽器只會收到 HttpOnly、SameSite=Lax Cookie，不保存 Basic Auth 標頭或密碼。Session Store 使用 Node 內建 SQLite，並以 `ADMIN_SESSION_SECRET` 衍生的 AES-256-GCM 金鑰加密資料庫中的 Session 內容。請備份並妥善保管資料庫與密鑰；更換密鑰會使既有 Session 無法解密。SQLite 資料檔已排除於 Git。Node 22.12 使用內建 SQLite 實驗性旗標啟動；較新 Node 版本也可執行同一指令。
+
+頁面初始化會向 Session API 驗證 Cookie；管理 API 一律先經 Session、CSRF 與來源驗證，再由後端代理至既有 n8n 管理 Webhook，不能透過直接呼叫 Vite proxy 繞過登入。登入失敗依來源 IP 限流；登入 Session 預設有效 8 小時並採活動延長，可用 `ADMIN_SESSION_TTL_HOURS` 設定 1–168 小時。部署至 HTTPS 時應設定 `ADMIN_SESSION_COOKIE_SECURE=true`，並將 `ADMIN_APP_ORIGIN` 設為實際前端來源；若服務位於可信任反向代理後，才設定 `ADMIN_SESSION_TRUST_PROXY=true`。不可在公開網路使用 HTTP 或提交真實 Session 金鑰。
+
+正式建置（包括 GitHub Pages）仍強制使用 Mock，不連線登入 API；Mock 模式任意非空帳密即可進入展示頁，沒有身分驗證或資料存取保護。需要正式後台時，必須將 Session API 部署在可信任伺服器，透過 HTTPS 提供同源代理，並妥善管理密鑰與 SQLite 持久化備份；靜態 GitHub Pages 本身無法執行 Session 後端。
+
+後台工單列表本機以 `VITE_ADMIN_TICKETS_MODE=api` 啟用，使用 `GET /api/admin/tickets` 經 Session API 驗證後代理至既有 n8n Webhook；瀏覽器只傳送 Session Cookie，不會附帶 Basic Authorization。回應格式為 `{ success: true, count, tickets }`。設定 `VITE_ADMIN_TICKETS_MODE=mock` 可切回列表 Mock；正式建置強制使用 Mock。
 
 ## 安全與資料管理
 

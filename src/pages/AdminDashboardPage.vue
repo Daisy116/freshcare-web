@@ -4,7 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminTicketDetails from '@/components/AdminTicketDetails.vue'
 import AdminTicketQueue from '@/components/AdminTicketQueue.vue'
-import { clearAdminAuthentication } from '@/services/adminAuthService'
+import { logoutAdmin } from '@/services/adminAuthService'
 import AdminFlowGuideModal from '@/components/AdminFlowGuideModal.vue'
 import {
   AdminTicketDetailNotFoundError,
@@ -296,9 +296,14 @@ async function assignSelectedTicket(payload: {
   }
 }
 
-function logout() {
-  clearAdminAuthentication()
-  void router.push('/admin/login')
+async function logout() {
+  try {
+    await logoutAdmin()
+    await router.push('/admin/login')
+  } catch (cause) {
+    console.error('Unable to revoke the admin session:', cause)
+    await router.push({ name: 'admin-login', query: { notice: 'logout-failed' } })
+  }
 }
 
 function resetFilters() {

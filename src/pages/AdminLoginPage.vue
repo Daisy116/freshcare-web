@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { adminAuthMode, loginAdmin } from '@/services/adminAuthService'
 
 const router = useRouter()
+const route = useRoute()
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const isLoading = ref(false)
 const error = ref('')
+
+onMounted(() => {
+  if (route.query.notice === 'logout-failed') {
+    error.value = '無法連線至 Session 服務，登出可能尚未撤銷，請確認服務狀態後再試。'
+  } else if (route.query.notice === 'session-unavailable') {
+    error.value = '目前無法驗證登入工作階段，請確認 Session API 與 n8n 是否啟動。'
+  } else if (route.query.notice === 'session-expired') {
+    error.value = '登入工作階段已失效，請重新登入。'
+  }
+})
 
 async function submitLogin() {
   error.value = ''
@@ -85,7 +96,7 @@ async function submitLogin() {
           <svg v-if="!isLoading" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
         </button>
         <p class="admin-mock-notice">
-          {{ adminAuthMode === 'mock' ? 'Mock 展示模式：輸入任意帳號與密碼即可進入（不驗證身分）' : '登入由 n8n Basic Auth API 驗證' }}
+          {{ adminAuthMode === 'mock' ? 'Mock 展示模式：輸入任意帳號與密碼即可進入（不驗證身分）' : '由 Session API 安全驗證，再向 n8n 驗證員工帳密' }}
         </p>
       </form>
     </div>

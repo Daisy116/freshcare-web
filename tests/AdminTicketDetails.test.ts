@@ -28,11 +28,11 @@ describe('admin ticket details', () => {
     expect(processing.find('.admin-approve-button').exists()).toBe(false)
   })
 
-  it('renders AI suggestions from ticket data without substituting sample values', () => {
+  it('renders AI suggestions in the standard four-row information table', () => {
     const ticket = {
       ...mockAdminTickets[0]!,
       status: 'under_review' as const,
-      aiSuggestion: { category: 'API 分類', department: 'API 部門', action: 'API 處置方向' },
+      aiSuggestion: { category: 'API 分類', department: 'API 部門', action: 'API 處置方向', priority: 'high' as const, reason: '長文字分析原因，應在右欄自然換行顯示。' },
     }
     const wrapper = mount(AdminTicketDetails, {
       props: { ticket, detailStatus: 'ready' },
@@ -40,7 +40,11 @@ describe('admin ticket details', () => {
 
     expect(wrapper.text()).toContain('API 分類')
     expect(wrapper.text()).toContain('API 部門')
-    expect(wrapper.text()).toContain('API 處置方向')
+    expect(wrapper.text()).toContain('建議優先級')
+    expect(wrapper.text()).toContain('AI 分析原因')
+    expect(wrapper.text()).toContain('長文字分析原因')
+    expect(wrapper.findAll('.admin-ai-row')).toHaveLength(4)
+    expect(wrapper.text()).not.toContain('API 處置方向')
     expect(wrapper.text()).not.toContain('商品品質異常（果實碰傷出水）')
     expect(wrapper.find('.admin-approve-button').exists()).toBe(false)
   })
@@ -149,10 +153,12 @@ describe('admin ticket details', () => {
     })
 
     expect(wrapper.find('.admin-review-actions').exists()).toBe(false)
-    expect(wrapper.get('.admin-review-summary').text()).toContain('AI vs 人工決策')
+    expect(wrapper.get('.admin-review-heading h4').text()).toBe('審核結果摘要')
+    expect(wrapper.get('.admin-review-heading .admin-decision-adoption').text()).toBe('已採納 AI 建議')
     expect(wrapper.get('.admin-review-summary').text()).toContain('物流組')
     expect(wrapper.get('.admin-review-summary').text()).toContain('物流部門')
-    expect(wrapper.get('.admin-review-summary').text()).toContain('已採納 AI 建議')
+    expect(wrapper.get('.admin-review-summary .admin-decision-adoption').text()).toBe('已採納 AI 建議')
+    expect(wrapper.find('.admin-review-summary > .admin-decision-adoption').exists()).toBe(false)
     expect(wrapper.get('.admin-review-summary').text()).toContain(ticket.reviewNote)
     expect(wrapper.get('.admin-review-summary').text()).toContain('2026/11/23')
   })
@@ -170,7 +176,7 @@ describe('admin ticket details', () => {
     })
 
     expect(wrapper.get('.admin-review-summary').text()).toContain('未使用 AI 分析')
-    expect(wrapper.get('.admin-review-summary').text()).toContain('未使用 AI 建議，由人工決定')
+    expect(wrapper.get('.admin-review-summary .admin-decision-adoption').text()).toBe('直接人工分派')
     expect(wrapper.get('.admin-review-summary').text()).toContain('未提供人工審核備註')
   })
 })

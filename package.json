@@ -5,17 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:frontend": "vite",
+    "dev:session": "node --experimental-sqlite --env-file-if-exists=.env.local server/adminSessionServer.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
     "typecheck": "vue-tsc -b",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run && node --experimental-sqlite --test server/tests/adminSessionServer.test.mjs"
   },
   "dependencies": {
+    "express": "^5.3.0",
+    "express-session": "^1.19.0",
     "vue": "^3.5.45",
     "vue-router": "^5.5.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
     "@types/node": "^22.20.5",
     "@vitejs/plugin-vue": "^6.0.11",
     "@vue/test-utils": "^2.6.0",

@@ -5,6 +5,9 @@ import {
   mockAdminTickets,
 } from '../src/services/adminTicketService'
 
+const csrfBootstrap = () => new Response(JSON.stringify({ success: true, csrfToken: 'preauth-token' }), { status: 200 })
+const sessionEstablished = () => new Response(JSON.stringify({ success: true, csrfToken: 'session-token' }), { status: 200 })
+
 describe('admin mock ticket data', () => {
   it('calculates KPI counts and close rate from the mock tickets', () => {
     const now = new Date()
@@ -32,7 +35,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       const fetchMock = vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(JSON.stringify({
           success: true,
           count: 2,
@@ -74,10 +78,11 @@ describe('admin mock ticket data', () => {
       const tickets = await fetchAdminTickets()
 
       expect(adminTicketsMode).toBe('api')
-      expect(fetchMock).toHaveBeenCalledTimes(2)
-      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
       expect(url).toBe('/api/admin/tickets')
-      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(options.credentials).toBe('same-origin')
       expect(tickets).toMatchObject([
         {
           id: 'CS-API-001',
@@ -108,7 +113,9 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
-      const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 200 }))
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
       vi.stubGlobal('fetch', fetchMock)
       const { loginAdmin } = await import('../src/services/adminAuthService')
       const { startAdminTicketReview } = await import('../src/services/adminTicketService')
@@ -116,12 +123,13 @@ describe('admin mock ticket data', () => {
 
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 200 }))
       await expect(startAdminTicketReview('CS-REVIEW-001')).resolves.toBeUndefined()
-      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
       expect(url).toBe('/api/admin/tickets/start-review')
       expect(options.method).toBe('POST')
       expect(options.body).toBe(JSON.stringify({ ticket_id: 'CS-REVIEW-001' }))
       expect(new Headers(options.headers).get('Content-Type')).toBe('application/json')
-      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('session-token')
 
       const errors = new Map([
         [400, '工單資料不完整或目前無法開始審核'],
@@ -141,7 +149,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       const fetchMock = vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }))
       vi.stubGlobal('fetch', fetchMock)
       const { loginAdmin } = await import('../src/services/adminAuthService')
@@ -149,7 +158,7 @@ describe('admin mock ticket data', () => {
       await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
       await expect(assignAdminTicket('CS-ASSIGN-001', '物流部門', '請優先處理配送破損。')).resolves.toBeUndefined()
 
-      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
       expect(url).toBe('/api/admin/assign-ticket')
       expect(options.method).toBe('POST')
       expect(options.body).toBe(JSON.stringify({
@@ -157,7 +166,8 @@ describe('admin mock ticket data', () => {
         review_department: '物流部門',
         review_note: '請優先處理配送破損。',
       }))
-      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('session-token')
 
       const failures = [
         [400, { message: '缺少必要資料' }, '缺少必要資料'],
@@ -251,7 +261,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       const fetchMock = vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(JSON.stringify({
           success: true,
           ticket: {
@@ -295,10 +306,10 @@ describe('admin mock ticket data', () => {
         createdAt: '2026-11-20T02:00:00.000Z',
       }
       const detail = await fetchAdminTicketDetail('CS-DETAIL-001', fallback)
-      const [url, options] = fetchMock.mock.calls[1] as [string, RequestInit]
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
 
       expect(url).toBe('/api/admin/ticket-detail?ticket_id=CS-DETAIL-001')
-      expect(new Headers(options.headers).get('Authorization')).toBe(`Basic ${btoa('worker@example.com:example-password')}`)
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
       expect(detail).toMatchObject({
         ticket: {
           id: 'CS-DETAIL-001',
@@ -324,7 +335,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       vi.stubGlobal('fetch', vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(JSON.stringify({
           success: true,
           ticket: { ticket_id: 'CS-EMPTY-EVENTS', created_at: '2026-11-20T02:00:00.000Z', ticket_status: 'received' },
@@ -348,7 +360,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       const fetchMock = vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(null, { status: 404 }))
         .mockResolvedValueOnce(new Response(null, { status: 401 }))
       vi.stubGlobal('fetch', fetchMock)
@@ -368,7 +381,8 @@ describe('admin mock ticket data', () => {
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
       vi.resetModules()
       vi.stubGlobal('fetch', vi.fn()
-        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
         .mockResolvedValueOnce(new Response(null, { status: 503 })))
       const { loginAdmin } = await import('../src/services/adminAuthService')
       const { fetchAdminTickets } = await import('../src/services/adminTicketService')

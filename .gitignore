@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+data/admin-sessions.sqlite*
 .DS_Store
 design-reference/
 .env

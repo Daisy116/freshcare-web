@@ -87,7 +87,7 @@ describe('admin ticket review action', () => {
     expect(fetchDetailMock).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('工單已成功分派')
     expect(wrapper.text()).toContain('工單已分派至物流部門。')
-    expect(wrapper.find('.admin-review-summary').text()).toContain('人工調整，未採納 AI 建議')
+    expect(wrapper.find('.admin-review-summary .admin-decision-adoption').text()).toBe('人工已調整')
     expect(wrapper.find('.admin-review-summary').text()).toContain('請優先處理配送破損。')
   })
 
