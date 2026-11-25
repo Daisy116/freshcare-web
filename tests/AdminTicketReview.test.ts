@@ -1,4 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { fetchTicketsMock, fetchDetailMock, startReviewMock, assignTicketMock, requestSupplementMock, closeTicketMock, routerPushMock } = vi.hoisted(() => ({
@@ -15,6 +16,22 @@ vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
   useRouter: () => ({ push: routerPushMock }),
 }))
+
+async function chooseFilterOption(wrapper: VueWrapper, value: string) {
+  await wrapper.get('[role="combobox"][aria-label="工單狀態"]').trigger('click')
+  const option = document.body.querySelector<HTMLElement>(`.admin-filter-dropdown__option[data-value="${value}"]`)
+  if (!option) throw new Error(`Filter option "${value}" was not rendered.`)
+  option.click()
+  await nextTick()
+}
+
+async function chooseDepartment(wrapper: VueWrapper, value: string) {
+  await wrapper.get('[role="combobox"][aria-label="負責部門"]').trigger('click')
+  const option = document.body.querySelector<HTMLElement>(`.admin-filter-dropdown__option[data-value="${value}"]`)
+  if (!option) throw new Error(`Department option "${value}" was not rendered.`)
+  option.click()
+  await nextTick()
+}
 
 vi.mock('../src/services/adminTicketService', async () => {
   const actual = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
@@ -75,8 +92,8 @@ describe('admin ticket review action', () => {
     const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
     wrapper = mount(AdminDashboardPage)
     await flushPromises()
-    expect(wrapper.get('select[aria-label="負責部門"]').element).toHaveProperty('value', '品質部門')
-    await wrapper.get('select[aria-label="負責部門"]').setValue('物流部門')
+    expect(wrapper.get('[role="combobox"][aria-label="負責部門"]').attributes('data-value')).toBe('品質部門')
+    await chooseDepartment(wrapper, '物流部門')
     await wrapper.get('textarea[aria-label="審核意見與處置說明"]').setValue('請優先處理配送破損。')
     await wrapper.get('.admin-action-assign').trigger('click')
 
@@ -110,7 +127,7 @@ describe('admin ticket review action', () => {
     const { default: AdminDashboardPage } = await import('../src/pages/AdminDashboardPage.vue')
     wrapper = mount(AdminDashboardPage)
     await flushPromises()
-    await wrapper.get('select[aria-label="負責部門"]').setValue('客服部門')
+    await chooseDepartment(wrapper, '客服部門')
     await wrapper.get('.admin-action-assign').trigger('click')
     await flushPromises()
 
@@ -317,7 +334,7 @@ describe('admin ticket review action', () => {
     await flushPromises()
     expect(wrapper.find('.admin-approve-button').exists()).toBe(true)
 
-    await wrapper.get('select[aria-label="工單狀態"]').setValue('received')
+    await chooseFilterOption(wrapper, 'received')
     await wrapper.get('.admin-approve-button').trigger('click')
     expect(wrapper.get('.admin-approve-button').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.admin-approve-button').text()).toContain('AI 分析中')
@@ -337,13 +354,13 @@ describe('admin ticket review action', () => {
 
     expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
     expect(fetchDetailMock).toHaveBeenCalledTimes(4)
-    expect(wrapper.get('select[aria-label="工單狀態"]').element).toHaveProperty('value', 'received')
+    expect(wrapper.get('[role="combobox"][aria-label="工單狀態"]').attributes('data-value')).toBe('received')
     expect(wrapper.get('.admin-detail-heading h2').text()).toContain(received.id)
     expect(wrapper.find('.admin-review-actions').exists()).toBe(true)
     expect(wrapper.text()).toContain('專員已開始審核工單。')
     expect(wrapper.text()).toContain('商品有碰傷')
     expect(wrapper.find('.admin-approve-button').exists()).toBe(false)
-    expect(wrapper.findAll('.admin-kpi-value')[3]?.text()).toContain('2')
+    expect(wrapper.findAll('.admin-kpi-value')[3]?.text()).toBe('50%')
   })
 
   it('stops polling and reports an error when the detail API fails', async () => {

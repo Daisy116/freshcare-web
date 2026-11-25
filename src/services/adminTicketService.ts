@@ -304,6 +304,12 @@ export function parseAdminTicket(value: unknown): AdminTicket {
   const status = parseStatus(statusValue)
   const reviewStatus = parseReviewStatus(value.review_status)
   const reviewNote = firstString(value, ['review_note', 'reviewer_note', 'review_comments'])
+  const reviewDepartment = firstString(value, [
+    'review_department',
+    'reviewDepartment',
+    'assigned_department',
+    'assignedDepartment',
+  ])?.trim()
   return {
     id,
     customerName: firstString(value, ['customer_name', 'name', 'customerName']) ?? '',
@@ -314,7 +320,11 @@ export function parseAdminTicket(value: unknown): AdminTicket {
     product: firstString(value, ['product_name', 'product', 'product_id']) ?? '',
     issueType,
     description: firstString(value, ['original_message', 'description', 'customer_description', 'content']) ?? '',
-    department: firstString(value, ['assigned_department', 'department']) ?? aiSuggestion?.department ?? '',
+    ...(reviewDepartment ? { reviewDepartment } : {}),
+    department: firstString(value, ['review_department'])?.trim()
+      || firstString(value, ['assigned_department', 'department'])?.trim()
+      || aiSuggestion?.department
+      || '',
     priority: parsePriority(value.priority ?? value.priority_level ?? value.ai_priority),
     status: status.status,
     ...(status.warning !== undefined ? { statusWarning: status.warning } : {}),
@@ -366,6 +376,19 @@ function parseDetailEvents(value: unknown): AdminTicket['events'] {
   })
 }
 
+function getManualReviewNote(events: AdminTicket['events']): string | undefined {
+  const event = events.find((item) => item.title === 'ticket_assigned')
+    ?? events.find((item) => item.title === 'reviewed')
+  const note = event?.description.match(/人工審核備註[：:]\s*([\s\S]*)/)?.[1]?.trim()
+  return note || undefined
+}
+
+function getTicketClosedNote(events: AdminTicket['events']): string | undefined {
+  const event = events.find((item) => item.title === 'ticket_closed')
+  const note = event?.description.match(/結案原因與處置說明[：:]\s*([\s\S]*)/)?.[1]?.trim()
+  return note || undefined
+}
+
 function parseDetailWarnings(value: unknown): string[] {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw new Error('工單詳情警告欄位格式不正確。')
@@ -382,17 +405,31 @@ export function parseAdminTicketDetailResponse(payload: unknown, fallback: Admin
   }
   const rawTicket = payload.ticket
   const contact = isRecord(payload.contact) ? payload.contact : {}
+  const events = parseDetailEvents(payload.events)
+  const statusValue = firstString(rawTicket, ['ticket_status', 'status']) ?? fallback.status
+  const status = parseStatus(statusValue).status
+  const reviewNote = status === 'closed'
+    ? getTicketClosedNote(events)
+    : getManualReviewNote(events)
+  const reviewDepartment = firstString(rawTicket, [
+    'review_department',
+    'reviewDepartment',
+    'assigned_department',
+    'assignedDepartment',
+  ])?.trim()
   const ticketRecord: Record<string, unknown> = {
     ...rawTicket,
+    ...(reviewDepartment ? { review_department: reviewDepartment } : {}),
     purchase_channel: firstString(rawTicket, ['purchase_channel', 'channel']) ?? fallback.channel,
     original_message: firstString(contact, ['original_message'])
       ?? firstString(rawTicket, ['original_message', 'description', 'customer_description', 'content'])
       ?? fallback.description,
     ticket_id: firstString(rawTicket, ['ticket_id', 'id', 'ticket_number']) ?? fallback.id,
-    ticket_status: firstString(rawTicket, ['ticket_status', 'status']) ?? fallback.status,
+    ticket_status: statusValue,
     created_at: firstString(rawTicket, ['created_at', 'submitted_at', 'createdAt']) ?? fallback.createdAt,
     updated_at: firstString(rawTicket, ['updated_at', 'updatedAt']) ?? fallback.updatedAt,
-    review_note: firstString(rawTicket, ['review_note', 'reviewer_note', 'review_comments']) ?? fallback.reviewNote,
+    review_note: reviewNote
+      ?? (firstString(rawTicket, ['review_note', 'reviewer_note', 'review_comments'])?.trim() || fallback.reviewNote),
     closed_at: firstString(rawTicket, ['closed_at', 'closedAt']) ?? fallback.closedAt,
     customer_name: firstString(contact, ['customer_name', 'name', 'customerName']) ?? fallback.customerName,
     email: firstString(contact, ['email', 'customer_email']) ?? fallback.email,
@@ -402,7 +439,7 @@ export function parseAdminTicketDetailResponse(payload: unknown, fallback: Admin
       ?? fallback.orderNumber,
   }
   const ticket = parseAdminTicket(ticketRecord)
-  ticket.events = parseDetailEvents(payload.events)
+  ticket.events = events
   return { ticket, warnings: parseDetailWarnings(payload.warnings) }
 }
 
@@ -651,8 +688,14 @@ export function filterAdminTickets(
     const ticketDate = Number.isNaN(createdDate.getTime())
       ? ''
       : `${createdDate.getFullYear()}-${`${createdDate.getMonth() + 1}`.padStart(2, '0')}-${`${createdDate.getDate()}`.padStart(2, '0')}`
+    const matchesStatus = !filters.status
+      || (filters.status === 'pending-group'
+        ? ticket.status === 'received' || ticket.status === 'under_review'
+        : filters.status === 'completed-group'
+          ? ticket.status === 'assigned' || ticket.status === 'waiting_customer' || ticket.status === 'closed'
+          : ticket.status === filters.status)
     return matchesSearch
-      && (!filters.status || ticket.status === filters.status)
+      && matchesStatus
       && (!filters.issueType || ticket.issueType === filters.issueType)
       && (!filters.priority || ticket.priority === filters.priority)
       && (!filters.dateFrom || ticketDate >= filters.dateFrom)
@@ -660,25 +703,15 @@ export function filterAdminTickets(
   })
 }
 
-function isToday(value: string | null, now: Date): boolean {
-  if (!value) return false
-  const date = new Date(value)
-  return date.getFullYear() === now.getFullYear()
-    && date.getMonth() === now.getMonth()
-    && date.getDate() === now.getDate()
-}
-
-export function calculateAdminTicketKpis(tickets: AdminTicket[], now = new Date()): AdminTicketKpis {
-  const pendingToday = tickets.filter((ticket) => ['received', 'under_review', 'pending'].includes(ticket.status)
-    && isToday(ticket.createdAt, now)).length
-  const processing = tickets.filter((ticket) => ['assigned', 'processing'].includes(ticket.status)).length
-  const closedToday = tickets.filter((ticket) => ticket.status === 'closed' && isToday(ticket.closedAt, now)).length
-  const closed = tickets.filter((ticket) => ticket.status === 'closed').length
+export function calculateAdminTicketKpis(tickets: AdminTicket[]): AdminTicketKpis {
+  const pendingStatuses: AdminTicketStatus[] = ['received', 'under_review']
+  const completedStatuses: AdminTicketStatus[] = ['assigned', 'waiting_customer', 'closed']
+  const pending = tickets.filter((ticket) => pendingStatuses.includes(ticket.status)).length
+  const completed = tickets.filter((ticket) => completedStatuses.includes(ticket.status)).length
   return {
-    pendingToday,
-    processing,
-    closedToday,
+    pending,
+    completed,
     total: tickets.length,
-    closedRate: tickets.length ? Math.round((closed / tickets.length) * 100) : 0,
+    completionRate: tickets.length ? Math.round((completed / tickets.length) * 100) : 0,
   }
 }

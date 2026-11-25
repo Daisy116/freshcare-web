@@ -9,16 +9,25 @@ const csrfBootstrap = () => new Response(JSON.stringify({ success: true, csrfTok
 const sessionEstablished = () => new Response(JSON.stringify({ success: true, csrfToken: 'session-token' }), { status: 200 })
 
 describe('admin mock ticket data', () => {
-  it('calculates KPI counts and close rate from the mock tickets', () => {
-    const now = new Date()
-    const kpis = calculateAdminTicketKpis(mockAdminTickets, now)
+  it('counts current pending and completed statuses, with legacy statuses only in the total', () => {
+    const statuses = ['received', 'under_review', 'assigned', 'waiting_customer', 'closed', 'processing', 'unknown'] as const
+    const tickets = statuses.map((status, index) => ({
+      ...mockAdminTickets[0]!,
+      id: `CS-KPI-${index}`,
+      status,
+    }))
 
-    expect(kpis).toEqual({
-      pendingToday: 1,
-      processing: 1,
-      closedToday: 2,
-      total: 5,
-      closedRate: 40,
+    expect(calculateAdminTicketKpis(tickets)).toEqual({
+      pending: 2,
+      completed: 3,
+      total: 7,
+      completionRate: 43,
+    })
+    expect(calculateAdminTicketKpis([])).toEqual({
+      pending: 0,
+      completed: 0,
+      total: 0,
+      completionRate: 0,
     })
   })
 
@@ -48,6 +57,7 @@ describe('admin mock ticket data', () => {
               product_id: 'P003',
               issue_type: 'wrong-item',
               ticket_status: 'received',
+              review_department: '品質部門',
               review_status: 'pending',
               created_at: '2026-11-20T02:00:00.000Z',
               closed_at: null,
@@ -92,6 +102,7 @@ describe('admin mock ticket data', () => {
           issueType: 'wrong-item',
           status: 'received',
           reviewStatus: 'pending',
+          reviewDepartment: '品質部門',
           priority: 'high',
           aiSuggestion: null,
           phone: '',
@@ -105,7 +116,7 @@ describe('admin mock ticket data', () => {
           aiSuggestion: { category: '商品品質', department: '生鮮品管組', action: '安排處理' },
         },
       ])
-      expect(calculateAdminTicketKpis(tickets)).toMatchObject({ total: 2, closedRate: 50 })
+      expect(calculateAdminTicketKpis(tickets)).toMatchObject({ total: 2, completed: 1, completionRate: 50 })
     })
 
     it('posts the selected ticket to start review and reports workflow HTTP errors', async () => {
@@ -323,6 +334,81 @@ describe('admin mock ticket data', () => {
       expect(detail.ticket.closedAt).toBe('2026-11-24T08:30:00.000Z')
     })
 
+    it('uses the ticket_closed event detail as the closed ticket review note', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const { parseAdminTicketDetailResponse } = await import('../src/services/adminTicketService')
+      const fallback = {
+        ...mockAdminTickets[0]!,
+        id: 'CS-2026-A3AB6D0A2D3C',
+        status: 'closed' as const,
+        reviewNote: undefined,
+        closedAt: '2026-11-25T09:30:00.000Z',
+      }
+
+      const detail = parseAdminTicketDetailResponse({
+        success: true,
+        ticket: {
+          ticket_id: fallback.id,
+          ticket_status: 'closed',
+          created_at: fallback.createdAt,
+          closed_at: fallback.closedAt,
+        },
+        events: [{
+          event_type: 'ticket_closed',
+          event_detail: '結案原因與處置說明：經確認為配送晚到一天且商品外觀正常，已提供配送時程說明，本次無需進一步分派。',
+          created_at: fallback.closedAt,
+        }],
+      }, fallback)
+
+      expect(detail.ticket.reviewNote).toBe(
+        '經確認為配送晚到一天且商品外觀正常，已提供配送時程說明，本次無需進一步分派。',
+      )
+    })
+
+    it('maps review department and extracts the assignment note, with reviewed event fallback', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const { parseAdminTicketDetailResponse } = await import('../src/services/adminTicketService')
+      const fallback = {
+        ...mockAdminTickets[0]!,
+        id: 'CS-2026-59928BABC147',
+        status: 'assigned' as const,
+        aiSuggestion: null,
+        department: '',
+        reviewNote: undefined,
+      }
+      const ticket = {
+        ticket_id: fallback.id,
+        ticket_status: 'assigned',
+        review_department: '品質部門',
+        ai_suggestion: null,
+        created_at: fallback.createdAt,
+      }
+      const assignmentDetail = parseAdminTicketDetailResponse({
+        success: true,
+        ticket,
+        events: [
+          { event_type: 'reviewed', event_detail: '人工審核備註：備援備註。' },
+          { event_type: 'ticket_assigned', event_detail: '人工審核備註：顧客回報商品軟爛，分派品質部門確認。' },
+        ],
+      }, fallback)
+
+      expect(assignmentDetail.ticket.department).toBe('品質部門')
+      expect(assignmentDetail.ticket.reviewNote).toBe('顧客回報商品軟爛，分派品質部門確認。')
+
+      const reviewedDetail = parseAdminTicketDetailResponse({
+        success: true,
+        ticket,
+        events: [{ event_type: 'reviewed', event_detail: '人工審核備註：備援備註。' }],
+      }, fallback)
+      expect(reviewedDetail.ticket.reviewNote).toBe('備援備註。')
+    })
+
     it('parses all AI analysis fields returned by the existing ticket API', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
@@ -376,7 +462,12 @@ describe('admin mock ticket data', () => {
         { id: 'CS-003', status: 'unknown', statusWarning: 'new_internal_state', reviewStatus: 'unknown', reviewStatusWarning: 'future_review' },
       ])
       expect(filterAdminTickets(tickets, { search: '', status: 'waiting_customer', issueType: '', priority: '' })).toHaveLength(1)
-      expect(calculateAdminTicketKpis(tickets)).toMatchObject({ total: 3 })
+      expect(calculateAdminTicketKpis(tickets)).toMatchObject({
+        pending: 1,
+        completed: 1,
+        total: 3,
+        completionRate: 33,
+      })
     })
 
     it('loads authenticated ticket details, contact data, AI suggestions, events and warnings', async () => {
@@ -551,6 +642,28 @@ describe('admin mock ticket data', () => {
       issueType: '熟度與保存諮詢',
       priority: 'low',
     }).map((ticket) => ticket.id)).toEqual(['CS-2026-0517-105'])
+  })
+
+  it('filters KPI status groups without including legacy or unknown statuses', () => {
+    const tickets = ['received', 'under_review', 'assigned', 'waiting_customer', 'closed', 'processing', 'unknown']
+      .map((status, index) => ({
+        ...mockAdminTickets[0]!,
+        id: `CS-GROUP-${index}`,
+        status: status as typeof mockAdminTickets[number]['status'],
+      }))
+
+    expect(filterAdminTickets(tickets, {
+      search: '',
+      status: 'pending-group',
+      issueType: '',
+      priority: '',
+    }).map((ticket) => ticket.status)).toEqual(['received', 'under_review'])
+    expect(filterAdminTickets(tickets, {
+      search: '',
+      status: 'completed-group',
+      issueType: '',
+      priority: '',
+    }).map((ticket) => ticket.status)).toEqual(['assigned', 'waiting_customer', 'closed'])
   })
 
   it('combines search, issue and date range filters while keeping the issue code as the filter value', () => {

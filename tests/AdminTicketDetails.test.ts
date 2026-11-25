@@ -1,9 +1,39 @@
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import AdminTicketDetails from '../src/components/AdminTicketDetails.vue'
-import { mockAdminTickets } from '../src/services/adminTicketService'
+import { mockAdminTickets, parseAdminTicketDetailResponse } from '../src/services/adminTicketService'
+
+async function chooseDepartment(wrapper: ReturnType<typeof mount>, value: string) {
+  await wrapper.get('[role="combobox"][aria-label="負責部門"]').trigger('click')
+  const option = document.body.querySelector<HTMLElement>(`.admin-filter-dropdown__option[data-value="${value}"]`)
+  if (!option) throw new Error(`Department option "${value}" was not rendered.`)
+  option.click()
+  await nextTick()
+}
 
 describe('admin ticket details', () => {
+  it('localizes event names and AI category and priority codes in the history', () => {
+    const ticket = {
+      ...mockAdminTickets[0]!,
+      events: [{
+        id: 'event-localized',
+        title: 'ai_analyzed',
+        description: '分類：delivery, quality, quantity, damage, wrong-item, preservation, modify, other；優先級：high／medium／low',
+        timestamp: '2026-11-25T09:00:00.000Z',
+        complete: true,
+      }],
+    }
+    const wrapper = mount(AdminTicketDetails, {
+      props: { ticket, detailStatus: 'ready' },
+    })
+
+    expect(wrapper.get('.admin-history time').text()).toContain('AI 分析完成')
+    expect(wrapper.get('.admin-history p').text()).toBe(
+      '分類：配送延遲, 商品品質異常, 數量短少, 運送損傷, 商品錯誤, 保存與食用諮詢, 訂單修改, 其他問題；優先級：高／中／低',
+    )
+  })
+
   it('emits a start-review request only for received tickets', async () => {
     const receivedTicket = {
       ...mockAdminTickets[0]!,
@@ -82,7 +112,7 @@ describe('admin ticket details', () => {
       props: { ticket, detailStatus: 'ready' },
     })
 
-    expect(wrapper.get('select[aria-label="負責部門"]').element).toHaveProperty('value', '品質部門')
+    expect(wrapper.get('[role="combobox"][aria-label="負責部門"]').attributes('data-value')).toBe('品質部門')
     expect(wrapper.get('textarea[aria-label="審核意見與處置說明"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.admin-review-actions').text()).toContain('要求補件')
     expect(wrapper.find('.admin-review-actions').text()).toContain('確認分派')
@@ -113,7 +143,7 @@ describe('admin ticket details', () => {
     expect(wrapper.get('.admin-review-actions button').attributes('disabled')).toBeUndefined()
     expect(wrapper.emitted('startReview')).toBeUndefined()
 
-    await wrapper.get('.admin-review-field select').setValue('客服部門')
+    await chooseDepartment(wrapper, '客服部門')
     await wrapper.get('.admin-action-assign').trigger('click')
     expect(wrapper.emitted('assignTicket')).toEqual([[
       {
@@ -188,6 +218,38 @@ describe('admin ticket details', () => {
     expect(wrapper.find('.admin-review-actions').exists()).toBe(false)
   })
 
+  it('shows the closure reason extracted from the ticket_closed history event', () => {
+    const fallback = {
+      ...mockAdminTickets[0]!,
+      id: 'CS-2026-A3AB6D0A2D3C',
+      status: 'closed' as const,
+      reviewNote: undefined,
+      closedAt: '2026-11-25T09:30:00.000Z',
+    }
+    const detail = parseAdminTicketDetailResponse({
+      success: true,
+      ticket: {
+        ticket_id: fallback.id,
+        ticket_status: 'closed',
+        created_at: fallback.createdAt,
+        closed_at: fallback.closedAt,
+      },
+      events: [{
+        event_type: 'ticket_closed',
+        event_detail: '結案原因與處置說明：經確認為配送晚到一天且商品外觀正常，已提供配送時程說明，本次無需進一步分派。',
+        created_at: fallback.closedAt,
+      }],
+    }, fallback)
+    const wrapper = mount(AdminTicketDetails, {
+      props: { ticket: detail.ticket, detailStatus: 'ready' },
+    })
+
+    expect(wrapper.get('.admin-close-summary').text()).toContain(
+      '經確認為配送晚到一天且商品外觀正常，已提供配送時程說明，本次無需進一步分派。',
+    )
+    expect(wrapper.get('.admin-close-summary').text()).not.toContain('未提供人工結案說明')
+  })
+
   it('requires a department for assignment and hides manual actions for unsupported statuses', async () => {
     const wrapper = mount(AdminTicketDetails, {
       props: {
@@ -232,6 +294,39 @@ describe('admin ticket details', () => {
     expect(wrapper.find('.admin-review-summary > .admin-decision-adoption').exists()).toBe(false)
     expect(wrapper.get('.admin-review-summary').text()).toContain(ticket.reviewNote)
     expect(wrapper.get('.admin-review-summary').text()).toContain('2026/11/23')
+  })
+
+  it('shows the mapped manual department and event note for the assigned ticket without AI', () => {
+    const fallback = {
+      ...mockAdminTickets[0]!,
+      id: 'CS-2026-59928BABC147',
+      status: 'assigned' as const,
+      aiSuggestion: null,
+      department: '',
+      reviewNote: undefined,
+      events: [],
+    }
+    const detail = parseAdminTicketDetailResponse({
+      success: true,
+      ticket: {
+        ticket_id: 'CS-2026-59928BABC147',
+        ticket_status: 'assigned',
+        review_department: '品質部門',
+        ai_suggestion: null,
+        created_at: fallback.createdAt,
+      },
+      events: [{
+        event_type: 'ticket_assigned',
+        event_detail: '人工審核備註：顧客回報商品軟爛，分派品質部門確認。',
+      }],
+    }, fallback)
+    const wrapper = mount(AdminTicketDetails, {
+      props: { ticket: detail.ticket, detailStatus: 'ready' },
+    })
+
+    expect(wrapper.get('.admin-review-summary').text()).toContain('品質部門')
+    expect(wrapper.get('.admin-review-summary').text()).toContain('顧客回報商品軟爛，分派品質部門確認。')
+    expect(wrapper.get('.admin-review-summary .admin-decision-adoption').text()).toBe('直接人工分派')
   })
 
   it('describes assigned tickets without AI analysis and without fabricated review fields', () => {

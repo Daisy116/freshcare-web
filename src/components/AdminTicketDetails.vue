@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import AdminFilterDropdown from '@/components/AdminFilterDropdown.vue'
 import type { AdminTicket, AdminTicketDetailStatus } from '@/types/adminTicket'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
+import { getTicketEventDescription, getTicketEventLabel } from '@/utils/ticketEvent'
 import { getTicketStatusLabel } from '@/utils/ticketStatus'
 
 const props = defineProps<{
@@ -60,6 +62,12 @@ const aiAdoptionLabel = computed(() => {
   return aiDepartment.value && adoptedAiSuggestion.value ? '已採納 AI 建議' : '人工已調整'
 })
 const selectedDepartment = ref<ReviewDepartment>('')
+const departmentOptions = [
+  { value: '', label: '請選擇部門' },
+  { value: '品質部門', label: '品質部門' },
+  { value: '物流部門', label: '物流部門' },
+  { value: '客服部門', label: '客服部門' },
+]
 const reviewNote = ref('')
 const supplementContent = ref('')
 const formError = ref('')
@@ -330,15 +338,10 @@ function formatDate(value: string): string {
       </section>
       <section v-else-if="isReviewable" class="admin-review">
         <header class="admin-review-heading"><h4>人工審核資料</h4><span>可獨立於 AI 分析進行</span></header>
-        <label class="admin-review-field">
+        <div class="admin-review-field">
           <span>負責部門</span>
-          <select v-model="selectedDepartment" aria-label="負責部門">
-            <option value="">請選擇部門</option>
-            <option value="品質部門">品質部門</option>
-            <option value="物流部門">物流部門</option>
-            <option value="客服部門">客服部門</option>
-          </select>
-        </label>
+          <AdminFilterDropdown v-model="selectedDepartment" label="負責部門" :options="departmentOptions" />
+        </div>
         <label class="admin-review-field">
           <span>審核意見與處置說明 <small>(執行「直接結案」時必填)</small></span>
           <textarea
@@ -380,11 +383,10 @@ function formatDate(value: string): string {
               @click="attemptReviewAction('direct-close')"
             ><span v-if="closeLoading" class="loading-spinner" aria-hidden="true"></span>{{ closeLoading ? '結案中…' : '✓　直接結案' }}</button>
           </div>
-          <p>要求補件會送出補件內容與審核備註；確認分派會送出工單編號、部門與審核備註。</p>
         </div>
       </section>
       <p v-else class="admin-review-unavailable">
-        此工單目前為{{ getTicketStatusLabel(ticket.status) }}，暫不開放人工審核操作。
+        此工單為{{ getTicketStatusLabel(ticket.status) }}，等補單完成後再開放人工審核操作。
       </p>
       <p v-if="assignError" class="admin-review-error" role="alert">{{ assignError }}</p>
       <p v-if="assignSuccess" class="admin-review-notice" role="status">{{ assignSuccess }}</p>
@@ -399,7 +401,7 @@ function formatDate(value: string): string {
       <ol v-if="ticket.events.length">
         <li v-for="event in ticket.events" :key="event.id" :class="{ 'event-pending': !event.complete }">
           <span class="admin-history-dot"></span>
-          <div><time v-if="event.timestamp">{{ formatDate(event.timestamp) }} · {{ event.title }}</time><strong v-else>當前進度：{{ event.title }}</strong><p>{{ event.description }}</p></div>
+          <div><time v-if="event.timestamp">{{ formatDate(event.timestamp) }} · {{ getTicketEventLabel(event.title) }}</time><strong v-else>當前進度：{{ getTicketEventLabel(event.title) }}</strong><p>{{ getTicketEventDescription(event.description) }}</p></div>
         </li>
       </ol>
       <p v-else class="admin-detail-no-events">目前尚無處理事件。</p>

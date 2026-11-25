@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import AdminFilterDropdown from '@/components/AdminFilterDropdown.vue'
 import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminTicketDetails from '@/components/AdminTicketDetails.vue'
 import AdminTicketQueue from '@/components/AdminTicketQueue.vue'
@@ -19,13 +20,14 @@ import {
   requestAdminTicketSupplement,
   startAdminTicketReview,
 } from '@/services/adminTicketService'
-import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus } from '@/types/adminTicket'
+import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus, AdminTicketStatusGroup } from '@/types/adminTicket'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 import { getTicketStatusLabel } from '@/utils/ticketStatus'
+import { createAdminTicketsCsv, downloadAdminTicketsCsv, getAdminTicketsCsvFilename } from '@/utils/adminTicketCsv'
 
 const router = useRouter()
 const search = ref('')
-const statusFilter = ref<AdminTicketStatus | ''>('')
+const statusFilter = ref<AdminTicketStatus | AdminTicketStatusGroup | ''>('')
 const issueFilter = ref('')
 const priorityFilter = ref<AdminTicketPriority | ''>('')
 const dateFrom = ref('')
@@ -53,6 +55,10 @@ const sidebarCollapsed = ref(true)
 const loadStatus = ref<'loading' | 'ready' | 'error'>(adminTicketsMode === 'api' ? 'loading' : 'ready')
 const loadError = ref('')
 const showFlowGuide = ref(false)
+const selectedKpi = ref<'pending' | 'completed' | 'total' | 'completionRate' | ''>('total')
+const updatingFiltersFromKpi = ref(false)
+const exportingCsv = ref(false)
+const exportError = ref('')
 
 const visibleTickets = computed(() => filterAdminTickets(tickets.value, {
   search: search.value,
@@ -67,9 +73,53 @@ const selectedTicket = computed(() => adminTicketsMode === 'mock'
   ? tickets.value.find((ticket) => ticket.id === selectedTicketId.value) ?? null
   : ticketDetail.value)
 const issueTypes = computed(() => [...new Set(tickets.value.map((ticket) => ticket.issueType).filter(Boolean))])
+const issueFilterOptions = computed(() => [
+  { value: '', label: '全部問題類型' },
+  ...issueTypes.value.map((issue) => ({ value: issue, label: getIssueTypeLabel(issue) })),
+])
 const hasFilters = computed(() => Boolean(search.value || statusFilter.value || issueFilter.value || priorityFilter.value || dateFrom.value || dateTo.value))
+const statusFilterLabel = computed(() => statusFilter.value === 'pending-group'
+  ? '待處理工單'
+  : statusFilter.value === 'completed-group'
+    ? '已完成處理工單'
+    : undefined)
+const statusFilterOptions = [
+  { value: '', label: '全部狀態' },
+  { value: 'received', label: '已受理' },
+  { value: 'under_review', label: '審核中' },
+  { value: 'assigned', label: '已分派' },
+  { value: 'processing', label: '處理中' },
+  { value: 'waiting_customer', label: '待補充資料' },
+  { value: 'closed', label: '已結案' },
+]
+const priorityFilterOptions = [
+  { value: '', label: '全部優先級' },
+  { value: 'high', label: '優先級：高' },
+  { value: 'medium', label: '優先級：中' },
+  { value: 'low', label: '優先級：低' },
+]
 const reviewPollIntervalMs = 2_000
 const reviewTimeoutMs = 60_000
+
+function applyKpiFilter(filter: AdminTicketStatusGroup | '', kpi: typeof selectedKpi.value) {
+  updatingFiltersFromKpi.value = true
+  search.value = ''
+  issueFilter.value = ''
+  priorityFilter.value = ''
+  dateFrom.value = ''
+  dateTo.value = ''
+  statusFilter.value = filter
+  selectedKpi.value = kpi
+  updatingFiltersFromKpi.value = false
+}
+
+watch(
+  [search, statusFilter, issueFilter, priorityFilter, dateFrom, dateTo],
+  () => {
+    if (!updatingFiltersFromKpi.value) selectedKpi.value = ''
+  },
+  { flush: 'sync' },
+)
 
 watch(visibleTickets, (visible) => {
   if (!visible.some((ticket) => ticket.id === selectedTicketId.value)) {
@@ -432,6 +482,23 @@ function resetFilters() {
   dateFrom.value = ''
   dateTo.value = ''
 }
+
+async function exportTicketsCsv() {
+  if (!visibleTickets.value.length || loadStatus.value !== 'ready' || exportingCsv.value) return
+
+  exportingCsv.value = true
+  exportError.value = ''
+  await nextTick()
+  try {
+    const csv = createAdminTicketsCsv(visibleTickets.value)
+    downloadAdminTicketsCsv(csv, getAdminTicketsCsvFilename())
+  } catch (cause) {
+    console.error('Unable to export filtered admin tickets:', cause)
+    exportError.value = '匯出 CSV 失敗，請稍後重試。'
+  } finally {
+    exportingCsv.value = false
+  }
+}
 </script>
 
 <template>
@@ -476,45 +543,43 @@ function resetFilters() {
 
       <main class="admin-dashboard-content">
         <section class="admin-kpis" aria-label="工單統計">
-          <article class="admin-kpi-card">
-            <header><span>◷　今日待審核工單</span><b class="kpi-tag tag-warning">待覆核</b></header>
-            <div class="admin-kpi-value">{{ kpis.pendingToday }} <small>件</small></div>
-            <footer><span>即時排程審核中</span><i><b :style="{ width: `${kpis.total ? (kpis.pendingToday / kpis.total) * 100 : 0}%` }"></b></i></footer>
+          <article class="admin-kpi-card" :class="{ 'is-selected': selectedKpi === 'total' }" role="button" tabindex="0" :aria-pressed="selectedKpi === 'total'" aria-label="顯示所有工單" @click="applyKpiFilter('', 'total')" @keydown.enter.prevent="applyKpiFilter('', 'total')" @keydown.space.prevent="applyKpiFilter('', 'total')">
+            <header><span>✓　工單總數</span><b class="kpi-tag tag-success">總計</b></header>
+            <div class="admin-kpi-value">{{ kpis.total }} <small>件</small></div>
+            <footer><span></span><i><b :style="{ width: `${kpis.total ? 100 : 0}%` }"></b></i></footer>
           </article>
-          <article class="admin-kpi-card">
-            <header><span>⌛　處理中工單</span><b class="kpi-tag tag-neutral">指派處理中</b></header>
-            <div class="admin-kpi-value">{{ kpis.processing }} <small>件</small></div>
-            <footer><span>生鮮 / 客服分流</span><i><b :style="{ width: `${kpis.total ? (kpis.processing / kpis.total) * 100 : 0}%` }"></b></i></footer>
+          <article class="admin-kpi-card" :class="{ 'is-selected': selectedKpi === 'pending' }" role="button" tabindex="0" :aria-pressed="selectedKpi === 'pending'" aria-label="篩選待處理工單" @click="applyKpiFilter('pending-group', 'pending')" @keydown.enter.prevent="applyKpiFilter('pending-group', 'pending')" @keydown.space.prevent="applyKpiFilter('pending-group', 'pending')">
+            <header><span>◷　待處理工單</span><b class="kpi-tag tag-warning">已受理 ＋ 審核中</b></header>
+            <div class="admin-kpi-value">{{ kpis.pending }} <small>件</small></div>
+            <footer><span></span><i><b :style="{ width: `${kpis.total ? (kpis.pending / kpis.total) * 100 : 0}%` }"></b></i></footer>
           </article>
-          <article class="admin-kpi-card">
-            <header><span>✓　今日已結案</span><b class="kpi-tag tag-success">已完成回覆</b></header>
-            <div class="admin-kpi-value">{{ kpis.closedToday }} <small>件</small></div>
-            <footer><span>已補寄 / 退款完成</span><i><b :style="{ width: `${kpis.total ? (kpis.closedToday / kpis.total) * 100 : 0}%` }"></b></i></footer>
+          <article class="admin-kpi-card" :class="{ 'is-selected': selectedKpi === 'completed' }" role="button" tabindex="0" :aria-pressed="selectedKpi === 'completed'" aria-label="篩選已完成處理工單" @click="applyKpiFilter('completed-group', 'completed')" @keydown.enter.prevent="applyKpiFilter('completed-group', 'completed')" @keydown.space.prevent="applyKpiFilter('completed-group', 'completed')">
+            <header><span>⌛　已完成處理工單</span><b class="kpi-tag tag-neutral">已分派 ＋ 待補件 ＋ 已結案</b></header>
+            <div class="admin-kpi-value">{{ kpis.completed }} <small>件</small></div>
+            <footer><span></span><i><b :style="{ width: `${kpis.total ? (kpis.completed / kpis.total) * 100 : 0}%` }"></b></i></footer>
           </article>
-          <article class="admin-kpi-card">
-            <header><span>▤　總工單數 / 結案率</span><b class="kpi-tag tag-neutral">累積達成</b></header>
-            <div class="admin-kpi-value">{{ kpis.total }} <small>件</small><strong>{{ kpis.closedRate }}%</strong></div>
-            <footer><span>總結案率</span><i><b :style="{ width: `${kpis.closedRate}%` }"></b></i></footer>
+          <article class="admin-kpi-card"  role="text" tabindex="0" :aria-pressed="selectedKpi === 'completionRate'" aria-label="依處理完成率篩選已完成處理工單" >
+            <header><span>▤　處理完成率</span><b class="kpi-tag tag-neutral">完成比例</b></header>
+            <div class="admin-kpi-value">{{ kpis.completionRate }}%</div>
+            <footer><span></span><i><b :style="{ width: `${kpis.completionRate}%` }"></b></i></footer>
           </article>
         </section>
 
         <section class="admin-filters" aria-label="工單篩選">
-          <label class="admin-filter-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="搜尋工單編號、顧客姓名或訂單號..." aria-label="搜尋工單編號、顧客姓名或訂單號" /></label>
-          <select v-model="statusFilter" aria-label="工單狀態">
-            <option value="">全部狀態</option>
-            <option value="received">已受理</option><option value="under_review">審核中</option><option value="assigned">已分派</option>
-            <option value="processing">處理中</option><option value="waiting_customer">待補充資料</option><option value="closed">已結案</option>
-            <option value="pending">待審核（Mock）</option><option value="needs-info">要求補件（Mock）</option><option value="unknown">未知狀態</option>
-          </select>
-          <select v-model="issueFilter" aria-label="問題類型">
-            <option value="">全部問題類型</option><option v-for="issue in issueTypes" :key="issue" :value="issue">{{ getIssueTypeLabel(issue) }}</option>
-          </select>
-          <select v-model="priorityFilter" aria-label="工單優先級">
-            <option value="">全部優先級</option><option value="high">優先級：高</option><option value="medium">優先級：中</option><option value="low">優先級：低</option>
-          </select>
+          <label class="admin-filter-search"><span aria-hidden="true">⌕</span><input v-model="search" type="search" placeholder="搜尋工單編號" aria-label="搜尋工單編號、顧客姓名或訂單號" /></label>
+          <AdminFilterDropdown v-model="statusFilter" label="工單狀態" :options="statusFilterOptions" :model-value-label="statusFilterLabel" />
+          <AdminFilterDropdown v-model="issueFilter" label="問題類型" :options="issueFilterOptions" />
+          <AdminFilterDropdown v-model="priorityFilter" label="工單優先級" :options="priorityFilterOptions" />
           <label class="admin-date-filter"><span>建立日期</span><input v-model="dateFrom" type="date" aria-label="建立日期起" /><span aria-hidden="true">至</span><input v-model="dateTo" type="date" aria-label="建立日期迄" /></label>
           <button v-if="hasFilters" class="admin-reset-filters" type="button" @click="resetFilters">清除篩選</button>
-          <button class="admin-export-button" type="button" disabled title="Mock 展示版不提供匯出">⇩　匯出 CSV</button>
+          <button
+            class="admin-export-button"
+            type="button"
+            :disabled="!visibleTickets.length || loadStatus !== 'ready' || exportingCsv"
+            :aria-busy="exportingCsv"
+            @click="exportTicketsCsv"
+          >{{ exportingCsv ? '◌　匯出中…' : '⇩　匯出 CSV' }}</button>
+          <span v-if="exportError" class="admin-export-error" role="alert">{{ exportError }}</span>
         </section>
 
         <section class="admin-workspace">

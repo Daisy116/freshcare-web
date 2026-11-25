@@ -38,6 +38,7 @@ export interface AdminTicket {
   issueType: string
   description: string
   department: string
+  reviewDepartment?: string
   priority: AdminTicketPriority
   status: AdminTicketStatus
   statusWarning?: string
@@ -62,19 +63,20 @@ export type AdminTicketDetailStatus = 'idle' | 'loading' | 'ready' | 'error' | '
 
 export interface AdminTicketFilters {
   search: string
-  status: AdminTicketStatus | ''
+  status: AdminTicketStatus | AdminTicketStatusGroup | ''
   issueType: string
   priority: AdminTicketPriority | ''
   dateFrom?: string
   dateTo?: string
 }
 
+export type AdminTicketStatusGroup = 'pending-group' | 'completed-group'
+
 export interface AdminTicketKpis {
-  pendingToday: number
-  processing: number
-  closedToday: number
+  pending: number
+  completed: number
   total: number
-  closedRate: number
+  completionRate: number
 }
 
 export interface AdminTicketsApiResponse {

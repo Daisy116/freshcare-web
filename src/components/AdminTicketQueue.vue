@@ -31,7 +31,7 @@ function formatDate(value: string): string {
           <tr v-for="ticket in tickets" :key="ticket.id" :class="{ selected: ticket.id === selectedTicketId }" :aria-selected="ticket.id === selectedTicketId" tabindex="0" @click="$emit('select', ticket.id)" @keydown.enter="$emit('select', ticket.id)" @keydown.space.prevent="$emit('select', ticket.id)">
             <td><strong>{{ ticket.id }}</strong><span>{{ ticket.customerName }}</span></td>
             <td><strong>{{ ticket.product }}</strong><span :class="{ 'admin-ticket-issue-alert': ticket.priority === 'high' }">{{ getIssueTypeLabel(ticket.issueType) }}</span></td>
-            <td><strong>{{ ticket.aiSuggestion?.department || '等待 AI 分析' }}</strong><span>優先級：{{ ticket.priority === 'high' ? '高' : ticket.priority === 'medium' ? '中' : '低' }}</span></td>
+            <td><strong>{{ ticket.aiSuggestion?.department || '等待 AI 分析' }}</strong><span :class="{ 'admin-ticket-issue-alert': ticket.priority === 'high' }">優先級：{{ ticket.priority === 'high' ? '高' : ticket.priority === 'medium' ? '中' : '低' }}</span></td>
             <td>
               <span class="admin-status-chip" :class="`status-${ticket.status}`">{{ getTicketStatusLabel(ticket.status) }}</span>
               <small v-if="ticket.statusWarning" class="admin-status-warning" role="note" :title="`API 回傳未知狀態：${ticket.statusWarning}`">⚠ 狀態待確認</small>
@@ -46,7 +46,7 @@ function formatDate(value: string): string {
       </table>
     </div>
     <footer class="admin-queue-footer">
-      <span>顯示 {{ tickets.length }} 筆，共 {{ totalTickets }} 筆工單{{ loadStatus === 'ready' ? '' : ' · ' + (loadStatus === 'loading' ? '載入中' : '載入失敗') }}</span>
+      <span>{{ loadStatus === 'ready' ? '' : ' · ' + (loadStatus === 'loading' ? '載入中' : '載入失敗') }}</span>
       <span class="admin-page-indicator">1 / 1</span>
     </footer>
   </section>
