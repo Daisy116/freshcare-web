@@ -496,6 +496,20 @@ export async function fetchAdminTickets(): Promise<AdminTicket[]> {
   return parseAdminTicketsResponse(payload)
 }
 
+export async function fetchAdminTicketsForReport(): Promise<AdminTicket[]> {
+  const tickets = await fetchAdminTickets()
+  const detailedTickets: AdminTicket[] = []
+  const batchSize = 5
+
+  for (let index = 0; index < tickets.length; index += batchSize) {
+    const batch = tickets.slice(index, index + batchSize)
+    const details = await Promise.all(batch.map((ticket) => fetchAdminTicketDetail(ticket.id, ticket)))
+    detailedTickets.push(...details.map(({ ticket }) => ticket))
+  }
+
+  return detailedTickets
+}
+
 export async function exportAdminTicketsCsv(ticketIds: string[]): Promise<Blob> {
   if (ticketIds.length === 0) throw new Error('沒有符合篩選條件的工單可匯出。')
   if (ticketIds.length > 100) throw new Error('n8n 每次最多匯出 100 筆工單，請縮小篩選範圍後再試。')

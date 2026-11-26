@@ -22,15 +22,18 @@ const departmentKey = (department: string) => department.trim().toLocaleLowerCas
 
 export interface AdminTicketStatistics {
   total: number
+  pendingTotal: number
   aiAnalyzed: number
-  aiAnalysisRate: number
+  aiAnalysisRate: number | null
   comparableRecommendations: number
-  adoptedRecommendations: number
-  adoptionRate: number
+  consistentRecommendations: number
+  inconsistentRecommendations: number
+  departmentConsistencyRate: number | null
   completionRate: number
   finalTreatmentTotal: number
   finalTreatments: Array<{ value: string; label: string; count: number; rate: number }>
   statusCounts: Array<{ value: string; label: string; count: number }>
+  topStatus: { value: string; label: string; count: number; rate: number } | null
   otherStatusCount: number
   otherStatuses: Array<{ value: string; label: string; count: number }>
 }
@@ -41,9 +44,11 @@ export function calculateAdminTicketStatistics(tickets: AdminTicket[]): AdminTic
   const comparable = tickets.filter((ticket) => ticket.status === 'assigned'
     && Boolean(ticket.reviewDepartment?.trim())
     && Boolean(ticket.aiSuggestion?.department.trim()))
-  const adoptedRecommendations = comparable.filter((ticket) =>
+  const consistentRecommendations = comparable.filter((ticket) =>
     departmentKey(ticket.reviewDepartment ?? '') === departmentKey(ticket.aiSuggestion?.department ?? ''),
   ).length
+  const inconsistentRecommendations = comparable.length - consistentRecommendations
+  const pendingTotal = tickets.filter((ticket) => ticket.status === 'received' || ticket.status === 'under_review').length
   const finalTreatmentCounts = finalTreatmentStatuses.map((status) => ({
     ...status,
     count: tickets.filter((ticket) => ticket.status === status.value).length,
@@ -65,14 +70,22 @@ export function calculateAdminTicketStatistics(tickets: AdminTicket[]): AdminTic
     count,
   }))
   const otherStatusCount = otherStatuses.reduce((sum, item) => sum + item.count, 0)
+  const statusCounts = reportStatuses.map((status) => ({
+    ...status,
+    count: tickets.filter((ticket) => ticket.status === status.value).length,
+  }))
+  const topStatus = statusCounts.reduce<typeof statusCounts[number] | null>((top, status) =>
+    !top || status.count > top.count ? status : top, null)
 
   return {
     total,
+    pendingTotal,
     aiAnalyzed,
-    aiAnalysisRate: total ? aiAnalyzed / total : 0,
+    aiAnalysisRate: total ? aiAnalyzed / total : null,
     comparableRecommendations: comparable.length,
-    adoptedRecommendations,
-    adoptionRate: comparable.length ? adoptedRecommendations / comparable.length : 0,
+    consistentRecommendations,
+    inconsistentRecommendations,
+    departmentConsistencyRate: comparable.length ? consistentRecommendations / comparable.length : null,
     completionRate: total
       ? tickets.filter((ticket) => completedStatuses.has(ticket.status)).length / total
       : 0,
@@ -81,10 +94,10 @@ export function calculateAdminTicketStatistics(tickets: AdminTicket[]): AdminTic
       ...item,
       rate: finalTreatmentTotal ? item.count / finalTreatmentTotal : 0,
     })),
-    statusCounts: reportStatuses.map((status) => ({
-      ...status,
-      count: tickets.filter((ticket) => ticket.status === status.value).length,
-    })),
+    statusCounts,
+    topStatus: topStatus && topStatus.count > 0
+      ? { ...topStatus, rate: total ? topStatus.count / total : 0 }
+      : null,
     otherStatusCount,
     otherStatuses,
   }
@@ -162,25 +175,32 @@ function createStatusWorksheet(workbook: ExcelJS.Workbook, tickets: AdminTicket[
 
 function createAiWorksheet(workbook: ExcelJS.Workbook, stats: AdminTicketStatistics) {
   const sheet = workbook.addWorksheet('AI 輔助分析')
-  sheet.addRow(['指標', '件數', '可比較件數', '比例'])
-  sheet.addRow(['AI 分析使用率', stats.aiAnalyzed, stats.total, stats.aiAnalysisRate])
+  sheet.addRow(['指標', '件數', '可比較件數', '比例', '資料狀態'])
   sheet.addRow([
-    'AI 建議採納／一致率',
-    stats.adoptedRecommendations,
+    'AI 分析使用率',
+    stats.aiAnalyzed,
+    stats.total,
+    stats.aiAnalysisRate ?? '—',
+    stats.aiAnalysisRate === null ? '暫無可比較資料' : '',
+  ])
+  sheet.addRow([
+    'AI 建議一致率',
+    stats.consistentRecommendations,
     stats.comparableRecommendations,
-    stats.adoptionRate,
+    stats.departmentConsistencyRate ?? '—',
+    stats.departmentConsistencyRate === null ? '暫無可比較資料' : '',
   ])
   sheet.addRow([])
   sheet.addRow(['最終處置分布', '件數', '處置狀態總數比例'])
   for (const item of stats.finalTreatments) {
     sheet.addRow([item.label, item.count, item.rate])
   }
-  sheet.getCell(2, 4).numFmt = '0.0%'
-  sheet.getCell(3, 4).numFmt = '0.0%'
+  if (stats.aiAnalysisRate !== null) sheet.getCell(2, 4).numFmt = '0.0%'
+  if (stats.departmentConsistencyRate !== null) sheet.getCell(3, 4).numFmt = '0.0%'
   for (let rowNumber = 6; rowNumber <= 8; rowNumber += 1) {
     sheet.getCell(rowNumber, 3).numFmt = '0.0%'
   }
-  styleWorksheet(sheet, [32, 16, 24, 18])
+  styleWorksheet(sheet, [32, 16, 24, 18, 24])
   const distributionHeader = sheet.getRow(5)
   distributionHeader.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: 'FF315339' } }

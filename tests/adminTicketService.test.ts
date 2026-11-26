@@ -119,6 +119,56 @@ describe('admin mock ticket data', () => {
       expect(calculateAdminTicketKpis(tickets)).toMatchObject({ total: 2, completed: 1, completionRate: 50 })
     })
 
+    it('hydrates report tickets from detail API fields omitted by the list API', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          success: true,
+          count: 1,
+          tickets: [{
+            ticket_id: 'CS-2026-29A88A6E2E3F',
+            ticket_status: 'closed',
+            created_at: '2026-11-20T02:00:00.000Z',
+            ai_department: '客服部門',
+          }],
+        }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          success: true,
+          ticket: {
+            ticket_id: 'CS-2026-29A88A6E2E3F',
+            ticket_status: 'closed',
+            created_at: '2026-11-20T02:00:00.000Z',
+            ai_category: 'preservation',
+            ai_department: '客服部門',
+            review_department: null,
+          },
+          contact: null,
+          events: [],
+          warnings: [],
+        }), { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { fetchAdminTicketsForReport } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      const tickets = await fetchAdminTicketsForReport()
+      const [detailUrl, detailOptions] = fetchMock.mock.calls[3] as [string, RequestInit]
+
+      expect(detailUrl).toBe('/api/admin/ticket-detail?ticket_id=CS-2026-29A88A6E2E3F')
+      expect(new Headers(detailOptions.headers).get('X-CSRF-Token')).toBeNull()
+      expect(tickets[0]).toMatchObject({
+        id: 'CS-2026-29A88A6E2E3F',
+        status: 'closed',
+        aiSuggestion: { category: 'preservation', department: '客服部門' },
+      })
+      expect(tickets[0]?.reviewDepartment).toBeUndefined()
+    })
+
     it('posts the selected ticket to start review and reports workflow HTTP errors', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')

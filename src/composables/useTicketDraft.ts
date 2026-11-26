@@ -1,4 +1,5 @@
 import { reactive, ref } from 'vue'
+import type { DemoOrder } from '@/services/demoOrderService'
 import type { SubmittedTicket, TicketForm } from '@/types/ticket'
 
 const initialForm = (): TicketForm => ({
@@ -18,14 +19,16 @@ const initialForm = (): TicketForm => ({
   privacyAccepted: false,
 })
 
+const selectedDemoOrder = ref<DemoOrder | null>(null)
 const draft = reactive<TicketForm>(initialForm())
 const submittedTicket = ref<SubmittedTicket | null>(null)
 
 export function useTicketDraft() {
   function resetDraft() {
+    selectedDemoOrder.value = null
     Object.assign(draft, initialForm())
     submittedTicket.value = null
   }
 
-  return { draft, submittedTicket, resetDraft }
+  return { draft, selectedDemoOrder, submittedTicket, resetDraft }
 }

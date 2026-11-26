@@ -18,6 +18,11 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        '/api/demo-orders': {
+          target: 'http://localhost:5678',
+          changeOrigin: true,
+          rewrite: () => '/webhook/freshcare/demo-orders',
+        },
         '/api/products': {
           target: 'http://localhost:5678',
           changeOrigin: true,

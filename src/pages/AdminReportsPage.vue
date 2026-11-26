@@ -4,7 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import AdminSidebar from '@/components/AdminSidebar.vue'
 import AdminFlowGuideModal from '@/components/AdminFlowGuideModal.vue'
 import { logoutAdmin } from '@/services/adminAuthService'
-import { fetchAdminTickets } from '@/services/adminTicketService'
+import { fetchAdminTicketsForReport } from '@/services/adminTicketService'
 import type { AdminTicket } from '@/types/adminTicket'
 import {
   calculateAdminTicketStatistics,
@@ -21,13 +21,18 @@ const exportError = ref('')
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(true)
 const showFlowGuide = ref(false)
+const treatmentDescriptions: Record<string, string> = {
+  assigned: '已確認負責處理部門，交由後續單位處理',
+  waiting_customer: '已提出補件要求，等待顧客提供資訊',
+  closed: '已完成工單結案處置',
+}
 
 const statistics = computed(() => calculateAdminTicketStatistics(tickets.value))
-const maxStatusCount = computed(() => Math.max(
-  1,
-  ...statistics.value.statusCounts.map((status) => status.count),
-  statistics.value.otherStatusCount,
+const chartMax = computed(() => Math.max(
+  5,
+  Math.ceil(Math.max(...statistics.value.statusCounts.map((status) => status.count)) / 5) * 5,
 ))
+const chartTicks = computed(() => [1, 0.75, 0.5, 0.25, 0].map((fraction) => Math.round(chartMax.value * fraction)))
 const otherStatusSummary = computed(() => statistics.value.otherStatuses
   .map((status) => `${status.label}（${status.value}）：${status.count} 件`)
   .join('、'))
@@ -36,7 +41,7 @@ async function loadReportData() {
   loadStatus.value = 'loading'
   loadError.value = ''
   try {
-    tickets.value = await fetchAdminTickets()
+    tickets.value = await fetchAdminTicketsForReport()
     loadStatus.value = 'ready'
   } catch (cause) {
     loadError.value = cause instanceof Error ? cause.message : '讀取報表資料時發生錯誤，請稍後重試。'
@@ -70,8 +75,8 @@ async function logout() {
   }
 }
 
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`
+function formatPercent(value: number | null): string {
+  return value === null ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
 onMounted(() => { void loadReportData() })
@@ -105,9 +110,9 @@ onMounted(() => { void loadReportData() })
       <main class="admin-dashboard-content admin-reports-content">
         <header class="admin-reports-heading">
           <div>
-            <p class="admin-reports-eyebrow">FRESHCARE ANALYTICS</p>
+            <p class="admin-reports-eyebrow">資料來源：FreshCare 客服工單</p>
             <h1>統計報表</h1>
-            <p>依工單列表 API 完整資料彙整的營運與 AI 輔助指標。</p>
+            <p>掌握客服工單處理進度與 AI 輔助分析情形，協助優化營運決策。</p>
           </div>
           <button
             class="admin-export-button admin-excel-export"
@@ -122,7 +127,7 @@ onMounted(() => { void loadReportData() })
         <section v-if="loadStatus === 'loading'" class="admin-report-state" role="status" aria-live="polite">
           <span class="admin-report-state-icon" aria-hidden="true">◌</span>
           <h2>正在載入統計資料</h2>
-          <p>正在透過已驗證的後台 Session 取得完整工單列表…</p>
+          <p>正在透過已驗證的後台 Session 取得完整工單與 AI 分析資料…</p>
         </section>
         <section v-else-if="loadStatus === 'error'" class="admin-report-state is-error" role="alert">
           <span class="admin-report-state-icon" aria-hidden="true">!</span>
@@ -133,61 +138,169 @@ onMounted(() => { void loadReportData() })
         <section v-else-if="!tickets.length" class="admin-report-state" role="status">
           <span class="admin-report-state-icon" aria-hidden="true">▤</span>
           <h2>目前沒有工單資料</h2>
-          <p>取得工單後，統計指標與 Excel 匯出會顯示於此。</p>
+          <p>AI 分析使用率及部門一致率：—（暫無可比較資料）。取得工單後，統計指標與 Excel 匯出會顯示於此。</p>
         </section>
-        <template v-else>
-          <section class="admin-report-metrics" aria-label="AI 輔助指標">
-            <article class="admin-report-card">
-              <span class="admin-report-card-label">AI 分析使用率</span>
-              <strong>{{ formatPercent(statistics.aiAnalysisRate) }}</strong>
-              <p>{{ statistics.aiAnalyzed }} 件已提供 AI 類別，共 {{ statistics.total }} 件工單</p>
-              <div class="admin-report-progress"><i :style="{ width: `${statistics.aiAnalysisRate * 100}%` }"></i></div>
-            </article>
-            <article class="admin-report-card">
-              <span class="admin-report-card-label">AI 建議採納／一致率</span>
-              <strong>{{ formatPercent(statistics.adoptionRate) }}</strong>
-              <p>{{ statistics.adoptedRecommendations }} 件部門一致／{{ statistics.comparableRecommendations }} 件可比較已分派工單</p>
-              <div class="admin-report-progress"><i :style="{ width: `${statistics.adoptionRate * 100}%` }"></i></div>
-              <small>此指標表示部門一致，不代表 AI 的實際貢獻。</small>
-            </article>
-          </section>
-
-          <section class="admin-report-panel">
-            <header class="admin-report-panel-heading">
-              <div><h2>工單狀態分布</h2><p>共 {{ statistics.total }} 件工單</p></div>
-            </header>
-            <div class="admin-report-status-chart" role="list" aria-label="工單狀態件數長條圖">
-              <div v-for="status in statistics.statusCounts" :key="status.value" class="admin-report-status-row" role="listitem">
-                <span class="admin-report-status-label">{{ status.label }}</span>
-                <div class="admin-report-bar-track"><i :class="`status-${status.value}`" :style="{ width: `${status.count / maxStatusCount * 100}%` }"></i></div>
-                <strong>{{ status.count }}</strong>
-              </div>
-              <div v-if="statistics.otherStatusCount" class="admin-report-status-row is-other" role="listitem">
-                <span class="admin-report-status-label">其他／未列狀態</span>
-                <div class="admin-report-bar-track"><i :style="{ width: `${statistics.otherStatusCount / maxStatusCount * 100}%` }"></i></div>
-                <strong>{{ statistics.otherStatusCount }}</strong>
-              </div>
-            </div>
-            <p v-if="otherStatusSummary" class="admin-report-warning" role="note">列表含有未列入五種主要狀態的資料，已另外統計：{{ otherStatusSummary }}。匯出報表亦包含這些狀態。</p>
-          </section>
-
-          <section class="admin-report-panel">
-            <header class="admin-report-panel-heading">
-              <div><h2>最終處置分布</h2><p>比例以已分派、待補充資料與已結案工單合計為基準（{{ statistics.finalTreatmentTotal }} 件）</p></div>
-            </header>
-            <div class="admin-report-treatment-grid">
-              <article v-for="item in statistics.finalTreatments" :key="item.value" class="admin-report-treatment-card">
-                <span>{{ item.label }}</span>
-                <strong>{{ item.count }}<small> 件</small></strong>
-                <div class="admin-report-progress"><i :class="`status-${item.value}`" :style="{ width: `${item.rate * 100}%` }"></i></div>
-                <small>{{ formatPercent(item.rate) }}</small>
+        <div v-else class="admin-report-dashboard">
+          <section class="admin-report-overview" aria-labelledby="admin-report-overview-title">
+            <p id="admin-report-overview-title" class="admin-report-eyebrow">營運指標 OVERVIEW</p>
+            <div class="admin-report-kpi-grid">
+              <article class="admin-report-kpi">
+                <div class="admin-report-kpi-heading"><span>工單總數</span><i aria-hidden="true">▤</i></div>
+                <div class="admin-report-kpi-value">{{ statistics.total }}<small>件</small></div>
+                <p>全部客服工單</p>
+              </article>
+              <article class="admin-report-kpi is-pending">
+                <div class="admin-report-kpi-heading"><span>待處理工單</span><i aria-hidden="true">◷</i></div>
+                <div class="admin-report-kpi-value">{{ statistics.pendingTotal }}<small>件</small></div>
+                <p>已受理 {{ statistics.statusCounts[0]?.count ?? 0 }} 件・審核中 {{ statistics.statusCounts[1]?.count ?? 0 }} 件</p>
+              </article>
+              <article class="admin-report-kpi is-completed">
+                <div class="admin-report-kpi-heading"><span>已完成處置工單</span><i aria-hidden="true">✓</i></div>
+                <div class="admin-report-kpi-value">{{ statistics.finalTreatmentTotal }}<small>件</small></div>
+                <p>已分派、待補充資料與結案</p>
+              </article>
+              <article class="admin-report-kpi is-rate">
+                <div class="admin-report-kpi-heading">
+                  <span>處置完成率</span>
+                  <svg class="admin-report-mini-ring" viewBox="0 0 36 36" aria-hidden="true">
+                    <circle cx="18" cy="18" r="15.5" pathLength="100" />
+                    <circle class="is-progress" cx="18" cy="18" r="15.5" pathLength="100" :style="{ strokeDasharray: `${statistics.completionRate * 100} 100` }" />
+                  </svg>
+                </div>
+                <div class="admin-report-kpi-value">{{ formatPercent(statistics.completionRate) }}</div>
+                <p>{{ statistics.finalTreatmentTotal }} / {{ statistics.total }} 件已完成處置決策</p>
               </article>
             </div>
           </section>
-        </template>
+
+          <section class="admin-report-ai" aria-labelledby="admin-report-ai-title">
+            <header class="admin-report-section-heading">
+              <span class="admin-report-section-icon" aria-hidden="true">✦</span>
+              <div>
+                <div class="admin-report-section-title"><h2 id="admin-report-ai-title">AI 輔助分析</h2><span>核心指標</span></div>
+                <p>衡量 AI 分析使用情形及 AI 建議部門一致性</p>
+              </div>
+            </header>
+            <div class="admin-report-ai-grid">
+              <article class="admin-report-ai-card">
+                <header class="admin-report-ai-card-heading">
+                  <h3>AI 分析使用率</h3>
+                  <strong>{{ formatPercent(statistics.aiAnalysisRate) }}</strong>
+                </header>
+                <div class="admin-report-gauge">
+                  <div class="admin-report-gauge-graphic">
+                    <svg viewBox="0 0 200 112" role="img" :aria-label="`AI 分析使用率 ${formatPercent(statistics.aiAnalysisRate)}`">
+                      <path class="admin-report-gauge-track" d="M 18 102 A 82 82 0 0 1 182 102" pathLength="100" />
+                      <path class="admin-report-gauge-value" d="M 18 102 A 82 82 0 0 1 182 102" pathLength="100" :style="{ strokeDasharray: `${(statistics.aiAnalysisRate ?? 0) * 100} 100` }" />
+                    </svg>
+                    <span class="admin-report-gauge-center">已使用 AI</span>
+                  </div>
+                  <div class="admin-report-gauge-scale"><span>0%</span><span>50%</span><span>100%</span></div>
+                </div>
+                <div class="admin-report-chart-note">
+                  <div class="admin-report-legend-pair">
+                    <span><i class="is-ai"></i>已使用 AI（{{ statistics.aiAnalyzed }} 件，{{ formatPercent(statistics.aiAnalysisRate) }}）</span>
+                    <span><i class="is-muted"></i>未使用 AI（{{ statistics.total - statistics.aiAnalyzed }} 件，{{ formatPercent(statistics.total ? 1 - statistics.aiAnalyzed / statistics.total : null) }}）</span>
+                  </div>
+                  <p>ⓘ 依工單是否具有 AI 分析類別計算</p>
+                </div>
+              </article>
+
+              <article class="admin-report-ai-card">
+                <header class="admin-report-ai-card-heading">
+                  <h3>AI 建議一致率</h3>
+                  <strong>{{ formatPercent(statistics.departmentConsistencyRate) }}</strong>
+                </header>
+                <div class="admin-report-donut-layout">
+                  <div class="admin-report-donut">
+                    <svg viewBox="0 0 100 100" :class="{ 'is-empty': statistics.departmentConsistencyRate === null }" role="img" :aria-label="statistics.departmentConsistencyRate === null ? '暫無可比較資料' : `AI 建議部門一致率 ${formatPercent(statistics.departmentConsistencyRate)}`">
+                      <circle class="is-inconsistent" cx="50" cy="50" r="38" pathLength="100" />
+                      <circle class="is-consistent" cx="50" cy="50" r="38" pathLength="100" :style="{ strokeDasharray: `${(statistics.departmentConsistencyRate ?? 0) * 100} 100` }" />
+                    </svg>
+                    <span>部門一致率</span>
+                  </div>
+                  <div class="admin-report-consistency-breakdown">
+                    <div class="admin-report-consistency-row">
+                      <div><span>部門一致</span><strong>{{ statistics.consistentRecommendations }} 件・{{ formatPercent(statistics.departmentConsistencyRate) }}</strong></div>
+                      <div class="admin-report-progress"><i class="is-consistent" :style="{ width: `${(statistics.departmentConsistencyRate ?? 0) * 100}%` }"></i></div>
+                    </div>
+                    <div class="admin-report-consistency-row">
+                      <div><span>部門不一致</span><strong>{{ statistics.inconsistentRecommendations }} 件・{{ formatPercent(statistics.departmentConsistencyRate === null ? null : 1 - statistics.departmentConsistencyRate) }}</strong></div>
+                      <div class="admin-report-progress"><i class="is-inconsistent" :style="{ width: `${statistics.departmentConsistencyRate === null ? 0 : (1 - statistics.departmentConsistencyRate) * 100}%` }"></i></div>
+                    </div>
+                    <p v-if="statistics.departmentConsistencyRate === null" class="admin-report-no-comparison">暫無可比較資料</p>
+                  </div>
+                </div>
+                <div class="admin-report-chart-note">
+                  <div class="admin-report-legend-pair">
+                    <span><i class="is-consistent"></i>部門一致（{{ statistics.consistentRecommendations }} 件）</span>
+                    <span><i class="is-inconsistent"></i>部門不一致（{{ statistics.inconsistentRecommendations }} 件）</span>
+                  </div>
+                  <p>ⓘ 比較已分派工單的 AI 建議部門與人工最終分派部門；共 {{ statistics.comparableRecommendations }} 件可比較</p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="admin-report-panel admin-report-status-panel" aria-labelledby="admin-report-status-title">
+            <header class="admin-report-panel-heading">
+              <div><h2 id="admin-report-status-title">工單狀態分布</h2><p>觀察目前各處理階段的工單數量，共 {{ statistics.total }} 件工單。</p></div>
+            </header>
+            <div class="admin-report-status-layout">
+              <div class="admin-report-column-chart" role="list" aria-label="五種工單狀態件數與比例">
+                <div class="admin-report-column-grid" aria-hidden="true">
+                  <div v-for="(tick, index) in chartTicks" :key="`${index}-${tick}`"><span>{{ tick }}</span><i></i></div>
+                </div>
+                <div class="admin-report-columns">
+                  <div v-for="status in statistics.statusCounts" :key="status.value" class="admin-report-column" role="listitem" :aria-label="`${status.label} ${status.count} 件，${formatPercent(statistics.total ? status.count / statistics.total : null)}`">
+                    <strong>{{ status.count }}</strong>
+                    <div class="admin-report-column-bar-wrap">
+                      <i :class="`status-${status.value}`" :style="{ height: `${status.count ? Math.max(4, status.count / chartMax * 100) : 0}%` }"></i>
+                    </div>
+                    <span>{{ status.label }}</span>
+                    <small>{{ formatPercent(statistics.total ? status.count / statistics.total : null) }}</small>
+                  </div>
+                </div>
+              </div>
+              <aside class="admin-report-summary">
+                <h3><span aria-hidden="true">▤</span> 工單處理摘要</h3>
+                <div class="admin-report-summary-card">
+                  <div><span>待處理工單</span><strong>{{ statistics.pendingTotal }} 件</strong></div>
+                  <p>已受理 {{ statistics.statusCounts[0]?.count ?? 0 }} 件＋審核中 {{ statistics.statusCounts[1]?.count ?? 0 }} 件</p>
+                </div>
+                <div class="admin-report-summary-card">
+                  <div><span>已完成處置決策</span><strong>{{ statistics.finalTreatmentTotal }} 件</strong></div>
+                  <p>占全部工單 {{ formatPercent(statistics.completionRate) }}</p>
+                </div>
+                <p v-if="statistics.topStatus" class="admin-report-top-status">
+                  目前「<strong>{{ statistics.topStatus.label }}</strong>」為最多的工單狀態，共 <strong>{{ statistics.topStatus.count }} 件</strong>，占全部工單的 <strong>{{ formatPercent(statistics.topStatus.rate) }}</strong>。
+                </p>
+                <p v-else class="admin-report-top-status">目前沒有可比較的工單狀態。</p>
+                <p v-if="otherStatusSummary" class="admin-report-warning" role="note">未列入圖表五種主要狀態：{{ otherStatusSummary }}。</p>
+              </aside>
+            </div>
+          </section>
+
+          <section class="admin-report-treatments" aria-labelledby="admin-report-treatment-title">
+            <header class="admin-report-panel-heading">
+              <div><h2 id="admin-report-treatment-title">最終處置分布</h2><p>比例以已完成處置決策的 {{ statistics.finalTreatmentTotal }} 件工單為基準。</p></div>
+            </header>
+            <div class="admin-report-treatment-grid">
+              <article v-for="item in statistics.finalTreatments" :key="item.value" class="admin-report-treatment-card" :class="`is-${item.value}`">
+                <div class="admin-report-treatment-heading">
+                  <span class="admin-report-treatment-icon" aria-hidden="true">{{ item.value === 'assigned' ? '⌁' : item.value === 'waiting_customer' ? '◷' : '✓' }}</span>
+                  <div><h3>{{ item.label }}</h3><p>{{ treatmentDescriptions[item.value] }}</p></div>
+                  <small>{{ statistics.finalTreatmentTotal ? formatPercent(item.rate) : '—' }}</small>
+                </div>
+                <strong class="admin-report-treatment-count">{{ item.count }}<small>件</small></strong>
+                <div class="admin-report-progress"><i :style="{ width: `${item.rate * 100}%` }"></i></div>
+              </article>
+            </div>
+          </section>
+        </div>
 
         <footer v-if="loadStatus === 'ready' && tickets.length" class="admin-report-footnote">
-          報表以 API 回傳的 {{ tickets.length }} 筆完整工單計算；未知／未列狀態不會併入五種主要狀態。
+          報表依已驗證 Session 載入的 {{ tickets.length }} 筆工單與工單詳情計算；未知／未列狀態不會併入五種主要狀態。
         </footer>
       </main>
     </div>

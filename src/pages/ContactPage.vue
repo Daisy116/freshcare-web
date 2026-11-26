@@ -9,7 +9,47 @@ import { useTicketDraft } from '@/composables/useTicketDraft'
 import { useProducts } from '@/composables/useProducts'
 import { isOrderRelatedIssue, validateTicket } from '@/utils/ticketValidation'
 
-const { draft } = useTicketDraft()
+import { fetchDemoOrders, type DemoOrder } from '@/services/demoOrderService'
+
+const { draft, selectedDemoOrder } = useTicketDraft()
+const demoOpen = ref(false)
+const demoOrders = ref<DemoOrder[]>([])
+const demoStatus = ref<'idle' | 'loading' | 'success' | 'error'>('idle')
+const demoError = ref('')
+
+async function loadDemoOrders() {
+  if (demoStatus.value === 'loading') return
+  demoStatus.value = 'loading'
+  try {
+    demoOrders.value = await fetchDemoOrders()
+    demoStatus.value = 'success'
+  } catch (error) {
+    demoStatus.value = 'error'
+    demoError.value = error instanceof Error ? error.message : '無法載入 Demo 訂單，請稍後重試。'
+  }
+}
+function toggleDemo() {
+  demoOpen.value = !demoOpen.value
+  if (demoOpen.value && demoStatus.value === 'idle') void loadDemoOrders()
+}
+function clearOrderFields() {
+  selectedDemoOrder.value = null
+  Object.assign(draft, { orderNumber: '', productId: '', quantity: 1, channel: '', deliveryDate: '' })
+  delete errors.orderNumber
+  delete errors.productId
+}
+function selectDemo(order: DemoOrder) {
+  const deselect = selectedDemoOrder.value?.order_id === order.order_id
+  clearOrderFields()
+  draft.orderNumberUnavailable = false
+  if (deselect) return
+  selectedDemoOrder.value = order
+  Object.assign(draft, { orderNumber: order.order_id, productId: order.product_id, quantity: order.purchase_quantity, channel: order.purchase_channel, deliveryDate: order.received_date || '' })
+}
+function changeUnavailable(event: Event) {
+  clearOrderFields()
+  draft.orderNumberUnavailable = (event.target as HTMLInputElement).checked
+}
 const { products, status: productsStatus, error: productsError, source: productsSource, loadProducts } = useProducts()
 const router = useRouter()
 const route = useRoute()
@@ -41,7 +81,7 @@ function setPhotoError(message: string) {
 
 function nextStep() {
   Object.keys(errors).forEach((key) => delete errors[key])
-  Object.assign(errors, validateTicket(draft, products.value.map((product) => product.id)))
+  Object.assign(errors, validateTicket(draft, selectedDemoOrder.value ? [selectedDemoOrder.value.product_id] : products.value.map((product) => product.id)))
   if (draft.photos.length > 5) photoError.value = '照片最多只能上傳 5 張。'
   if (Object.keys(errors).length || photoError.value) {
     document.querySelector('.has-error, [aria-invalid="true"], .field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -74,29 +114,45 @@ function nextStep() {
             <FormInput id="customer-email" v-model="draft.email" label="電子信箱 Email" type="email" placeholder="例：service@example.com" required hint="我們將以此 Email 提供案件進度" :error="errors.email" class="wide-field" />
             <div class="wide-field field">
               <div class="order-label-row"><label class="field-label" for="order-number">訂單編號 <span v-if="orderNumberRequired" class="required-mark">*</span><span v-else class="optional-note">（選填）</span></label>
-                <label class="checkbox-label compact"><input v-model="draft.orderNumberUnavailable" type="checkbox" /><span>我目前無法提供訂單編號</span></label>
+                <label class="checkbox-label compact"><input :checked="draft.orderNumberUnavailable" type="checkbox" @change="changeUnavailable" /><span>我目前無法提供訂單編號</span></label>
               </div>
-              <input id="order-number" v-model="draft.orderNumber" class="text-control" :class="{ 'has-error': errors.orderNumber }" placeholder="例：FC20250518-8921" :disabled="draft.orderNumberUnavailable" />
+              <input id="order-number" v-model="draft.orderNumber" class="text-control" :class="{ 'has-error': errors.orderNumber }" placeholder="例：FC20250518-8921" :disabled="draft.orderNumberUnavailable" :readonly="!!selectedDemoOrder" />
               <small v-if="errors.orderNumber" class="field-error" role="alert">{{ errors.orderNumber }}</small>
+              <div class="demo-orders">
+                <button type="button" class="demo-toggle" :aria-expanded="demoOpen" aria-controls="demo-order-list" @click="toggleDemo">使用 Demo 測試訂單 <span aria-hidden="true">{{ demoOpen ? '−' : '＋' }}</span></button>
+                <div v-if="demoOpen" id="demo-order-list" class="demo-body" :aria-busy="demoStatus === 'loading'">
+                  <p class="field-hint">選擇後自動帶入購買資訊；再次點選可取消，恢復手動填寫。</p>
+                  <p v-if="demoStatus === 'loading'" role="status">正在載入 Demo 訂單…</p>
+                  <div v-else-if="demoStatus === 'error'" role="alert">{{ demoError }} <button type="button" @click="loadDemoOrders">重試</button></div>
+                  <p v-else-if="!demoOrders.length" role="status">目前沒有可使用的 Demo 訂單。</p>
+                  <div v-else class="demo-grid">
+                    <button v-for="order in demoOrders" :key="order.order_id" type="button" class="demo-order" :class="{ selected: selectedDemoOrder?.order_id === order.order_id }" :aria-pressed="selectedDemoOrder?.order_id === order.order_id" @click="selectDemo(order)">
+                      <strong>{{ order.order_id }}</strong><span>{{ order.product_name }}</span><span>購買數量：{{ order.purchase_quantity }}</span><span>訂單狀態：{{ order.order_status_label || order.order_status }}</span><small>(建議測試情境：{{ order.demo_scenario }})</small>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
         <section class="form-card">
           <div class="section-heading"><span class="step-number">2</span><div><h2>購買商品資訊</h2><p>請指定需要反映問題的果品與批次細節</p></div></div>
-          <ProductSelector v-model="draft.productId" :products="products" :status="productsStatus" :source="productsSource" :load-error="productsError" :error="errors.productId" @retry="loadProducts(true)" />
+          <div v-if="selectedDemoOrder" class="field"><label class="field-label" for="demo-product">商品名稱</label><input id="demo-product" class="text-control" :value="selectedDemoOrder.product_name" readonly /><small class="field-hint">Demo 訂單購買資訊為唯讀，取消選取後可手動填寫。</small></div>
+          <ProductSelector v-else v-model="draft.productId" :products="products" :status="productsStatus" :source="productsSource" :load-error="productsError" :error="errors.productId" @retry="loadProducts(true)" />
           <div class="form-grid product-details">
             <div class="field">
               <label class="field-label">問題果品數量</label>
-              <div class="quantity-control"><button type="button" aria-label="減少數量" :disabled="draft.quantity <= 1" @click="draft.quantity = Math.max(1, draft.quantity - 1)">−</button><output>{{ draft.quantity }}</output><button type="button" aria-label="增加數量" @click="draft.quantity += 1">＋</button><span>份</span></div>
+              <div class="quantity-control"><button type="button" aria-label="減少數量" :disabled="!!selectedDemoOrder || draft.quantity <= 1" @click="draft.quantity = Math.max(1, draft.quantity - 1)">−</button><output>{{ draft.quantity }}</output><button type="button" aria-label="增加數量" :disabled="!!selectedDemoOrder" @click="draft.quantity += 1">＋</button><span>份</span></div>
             </div>
             <fieldset class="wide-field field no-border">
               <legend class="field-label">購買管道</legend>
-              <div class="channel-options">
+              <input v-if="selectedDemoOrder" class="text-control" aria-label="購買管道" :value="draft.channel" readonly />
+              <div v-else class="channel-options">
                 <label v-for="channel in purchaseChannels" :key="channel" class="choice-tile" :class="{ chosen: draft.channel === channel }"><input v-model="draft.channel" type="radio" :value="channel" /><span>{{ channel }}</span></label>
               </div>
             </fieldset>
-            <FormInput id="delivery-date" v-model="draft.deliveryDate" label="收貨日期" type="date" class="wide-field" />
+            <FormInput id="delivery-date" v-model="draft.deliveryDate" label="收貨日期" type="date" :readonly="!!selectedDemoOrder" class="wide-field" />
           </div>
         </section>
 
@@ -134,3 +190,16 @@ function nextStep() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.demo-orders { margin-top: 14px; border: 1px solid #d6dfcc; border-radius: 12px; background: #f7f8ef; overflow: hidden; }
+.demo-toggle { width: 100%; display: flex; justify-content: space-between; padding: 14px 16px; background: transparent; border: 0; color: #425c3b; font: inherit; font-weight: 600; cursor: pointer; }
+.demo-body { padding: 0 16px 16px; }
+.demo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.demo-order { display: flex; flex-direction: column; gap: 6px; padding: 14px; text-align: left; border: 1px solid #d6dfcc; border-radius: 10px; background: #fffdf6; color: #42523b; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.demo-order.selected { border-color: #527848; background: #e8efdd; box-shadow: inset 0 0 0 1px #527848; }
+.demo-order small { color: #63735c; }
+.demo-order:focus-visible, .demo-toggle:focus-visible { outline: 3px solid #527848; outline-offset: -3px; }
+input[readonly] { background: #f1f3eb; }
+@media (max-width: 600px) { .demo-grid { grid-template-columns: 1fr; } }
+</style>

@@ -18,7 +18,6 @@ import { RouterLink } from 'vue-router'
         <h2>快捷服務</h2>
         <RouterLink to="/contact">商品問題反映申請</RouterLink>
         <RouterLink to="/track">案件進度查詢</RouterLink>
-        <a href="mailto:service@freshcarefruit.tw">常見疑問與保存指引</a>
       </section>
     </div>
     <div class="footer-bottom">

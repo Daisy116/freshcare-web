@@ -9,6 +9,7 @@ defineProps<{
   hint?: string
   error?: string
   disabled?: boolean
+  readonly?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
@@ -25,6 +26,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
       :placeholder="placeholder"
       :required="required"
       :disabled="disabled"
+      :readonly="readonly"
       :aria-invalid="Boolean(error)"
       :aria-describedby="error ? `${id}-error` : hint ? `${id}-hint` : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
