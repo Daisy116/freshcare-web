@@ -14,6 +14,7 @@
     "test": "vitest run && node --experimental-sqlite --test server/tests/adminSessionServer.test.mjs"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "express": "^5.3.0",
     "express-session": "^1.19.0",
     "vue": "^3.5.45",
@@ -32,5 +33,10 @@
     "vite": "^8.3.8",
     "vitest": "^5.1.0",
     "vue-tsc": "^3.3.14"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

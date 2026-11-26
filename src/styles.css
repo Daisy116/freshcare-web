@@ -478,6 +478,7 @@ a { color: inherit; }
 .admin-sidebar-link.active { background: #496b50; box-shadow: 0 2px 4px rgba(39,51,43,.12); color: white; font-weight: 600; }
 .admin-sidebar-link:not(.active):not(.disabled):hover { background: #deece0; }
 .admin-sidebar-link.disabled { color: #8a938b; cursor: not-allowed; }
+.admin-sidebar-link:focus-visible { outline: 2px solid #315339; outline-offset: 2px; }
 .admin-sidebar-footer { padding: 15px 8px 0; border-top: 1px solid rgba(49,83,57,.12); }
 .admin-sidebar-footer p { margin: 0 0 12px; color: #687368; font-size: 10px; line-height: 1.6; }
 .admin-sidebar-logout { position: relative; display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #566155; font-size: 12px; text-align: left; cursor: pointer; }
@@ -1082,4 +1083,70 @@ a { color: inherit; }
   width: 100%;
   text-align: left;
   cursor: pointer;
+}
+
+.admin-reports-content { display: grid; gap: 18px; }
+.admin-reports-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.admin-reports-heading h1 { margin: 3px 0 5px; color: #27332b; font-size: 25px; line-height: 1.35; }
+.admin-reports-heading p { margin: 0; color: #687368; font-size: 12px; line-height: 1.6; }
+.admin-reports-heading .admin-reports-eyebrow { color: #496b50; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.admin-excel-export { min-width: 134px; padding: 10px 14px; border: 1px solid #cfdfd1; background: #e4f1e5; color: #315339; font-size: 12px; font-weight: 600; }
+.admin-excel-export:not(:disabled):hover { background: #d7ead9; }
+.admin-export-error { margin: -10px 0 0; color: #a22d25; font-size: 11px; }
+.admin-report-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.admin-report-card, .admin-report-panel, .admin-report-state { border: 1px solid #e3ebe2; border-radius: 13px; background: #fff; box-shadow: var(--card-shadow); }
+.admin-report-card { min-width: 0; padding: 18px 20px; }
+.admin-report-card-label { display: block; color: #566155; font-size: 12px; font-weight: 600; }
+.admin-report-card > strong { display: block; margin: 10px 0 4px; color: #315339; font-size: 31px; font-weight: 700; line-height: 1.2; }
+.admin-report-card p { margin: 0 0 13px; color: #687368; font-size: 10px; line-height: 1.6; }
+.admin-report-card > small { display: block; margin-top: 8px; color: #687368; font-size: 9px; }
+.admin-report-progress { height: 7px; overflow: hidden; border-radius: 99px; background: #e9f1e9; }
+.admin-report-progress i { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #6d9c71; transition: width .2s ease; }
+.admin-report-panel { min-width: 0; padding: 17px 20px 19px; }
+.admin-report-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.admin-report-panel-heading h2 { margin: 0; color: #27332b; font-size: 14px; font-weight: 600; }
+.admin-report-panel-heading p { margin: 4px 0 0; color: #687368; font-size: 10px; line-height: 1.5; }
+.admin-report-status-chart { display: grid; gap: 13px; }
+.admin-report-status-row { display: grid; grid-template-columns: minmax(112px, 1fr) minmax(80px, 4fr) 34px; align-items: center; gap: 12px; }
+.admin-report-status-label { color: #424842; font-size: 11px; }
+.admin-report-bar-track { height: 10px; overflow: hidden; border-radius: 99px; background: #edf3ed; }
+.admin-report-bar-track i { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #6d9c71; }
+.admin-report-bar-track i.status-received { background: #9cbb9e; }
+.admin-report-bar-track i.status-under_review { background: #7da981; }
+.admin-report-bar-track i.status-assigned { background: #59835e; }
+.admin-report-bar-track i.status-waiting_customer { background: #b6c798; }
+.admin-report-bar-track i.status-closed { background: #315339; }
+.admin-report-status-row.is-other .admin-report-bar-track i { background: #b5834c; }
+.admin-report-status-row > strong { color: #27332b; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.admin-report-warning { margin: 14px 0 0; padding: 9px 11px; border-radius: 8px; background: #fff6e8; color: #75501b; font-size: 10px; line-height: 1.6; }
+.admin-report-treatment-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.admin-report-treatment-card { display: grid; min-width: 0; gap: 9px; padding: 14px; border: 1px solid #e7eee6; border-radius: 10px; background: #fbfdfb; }
+.admin-report-treatment-card > span { color: #566155; font-size: 11px; }
+.admin-report-treatment-card > strong { color: #315339; font-size: 23px; line-height: 1.1; }
+.admin-report-treatment-card > strong small, .admin-report-treatment-card > small { color: #687368; font-size: 9px; font-weight: 400; }
+.admin-report-treatment-card .status-assigned { background: #59835e; }
+.admin-report-treatment-card .status-waiting_customer { background: #b6c798; }
+.admin-report-treatment-card .status-closed { background: #315339; }
+.admin-report-footnote { color: #687368; font-size: 9px; line-height: 1.5; }
+.admin-report-state { display: flex; min-height: 270px; align-items: center; flex-direction: column; justify-content: center; padding: 28px; text-align: center; }
+.admin-report-state-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: #e9f7eb; color: #496b50; font-size: 21px; }
+.admin-report-state h2 { margin: 13px 0 5px; color: #27332b; font-size: 15px; }
+.admin-report-state p { max-width: 480px; margin: 0; color: #687368; font-size: 11px; line-height: 1.6; }
+.admin-report-state.is-error .admin-report-state-icon { background: #fff0ed; color: #a22d25; }
+.admin-report-retry { margin-top: 15px; padding: 8px 14px; border: 0; border-radius: 8px; background: #315339; color: #fff; font-size: 10px; }
+
+@media (max-width: 700px) {
+  .admin-reports-content { gap: 13px; }
+  .admin-reports-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .admin-reports-heading h1 { font-size: 22px; }
+  .admin-reports-heading .admin-export-button { width: 100%; }
+  .admin-report-metrics { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .admin-report-card, .admin-report-panel { padding: 14px; }
+  .admin-report-card > strong { font-size: 28px; }
+  .admin-report-status-row { grid-template-columns: minmax(90px, 1fr) minmax(45px, 3fr) 28px; gap: 8px; }
+  .admin-report-status-label { font-size: 10px; }
+  .admin-report-treatment-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .admin-report-treatment-card { grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px; padding: 11px; }
+  .admin-report-treatment-card .admin-report-progress { grid-column: 1 / -1; grid-row: 2; }
+  .admin-report-treatment-card > small { grid-column: 2; grid-row: 1; }
 }

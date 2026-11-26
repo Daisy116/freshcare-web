@@ -22,10 +22,12 @@ describe('admin route protection', () => {
     await auth.loginAdmin({ email: 'demo', password: 'demo' })
     await router.push('/admin/dashboard')
     expect(router.currentRoute.value.path).toBe('/admin/dashboard')
+    await router.push('/admin/reports')
+    expect(router.currentRoute.value.path).toBe('/admin/reports')
 
     auth.clearAdminAuthentication()
     await router.push('/contact')
-    await router.push('/admin/dashboard')
+    await router.push('/admin/reports')
     expect(router.currentRoute.value.path).toBe('/admin/login')
   })
 
@@ -47,6 +49,10 @@ describe('admin route protection', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/session/verify')
     expect((fetchMock.mock.calls[0][1] as RequestInit).credentials).toBe('same-origin')
 
+    await router.push('/admin/reports')
+    expect(router.currentRoute.value.path).toBe('/admin/reports')
+    expect(fetchMock).toHaveBeenCalledOnce()
+
     await router.push('/admin/login')
     expect(router.currentRoute.value.path).toBe('/admin/dashboard')
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -64,7 +70,7 @@ describe('admin route protection', () => {
     vi.stubGlobal('fetch', fetchMock)
     const { default: router } = await import('../src/router')
 
-    await router.push('/admin/dashboard')
+    await router.push('/admin/reports')
     expect(router.currentRoute.value.path).toBe('/admin/login')
     expect(fetchMock).toHaveBeenCalledOnce()
   })

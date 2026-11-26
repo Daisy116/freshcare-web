@@ -606,6 +606,75 @@ describe('admin mock ticket data', () => {
       await expect(fetchAdminTickets()).rejects.toThrow('HTTP 503')
     })
 
+    it('posts all requested ticket IDs through the authenticated proxy and returns its CSV Blob', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const csvResponse = new Response('server generated CSV', {
+        status: 200,
+        headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+      })
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(csvResponse)
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { exportAdminTicketsCsv } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      const blob = await exportAdminTicketsCsv(['CS-2026-001', 'CS-2026-002'])
+      const [url, options] = fetchMock.mock.calls[2] as [string, RequestInit]
+
+      expect(url).toBe('/api/admin/export-tickets')
+      expect(options.method).toBe('POST')
+      expect(new Headers(options.headers).get('Content-Type')).toBe('application/json')
+      expect(new Headers(options.headers).get('X-CSRF-Token')).toBe('session-token')
+      expect(new Headers(options.headers).get('Authorization')).toBeNull()
+      expect(JSON.parse(String(options.body))).toEqual({ ticket_ids: ['CS-2026-001', 'CS-2026-002'] })
+      expect(await blob.text()).toBe('server generated CSV')
+    })
+
+    it('rejects non-CSV responses and prevents requests with more than 100 IDs', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Unexpected payload' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { exportAdminTicketsCsv } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      await expect(exportAdminTicketsCsv(['CS-2026-001'])).rejects.toThrow('不是 CSV')
+      await expect(exportAdminTicketsCsv(Array.from({ length: 101 }, (_, index) => `CS-${index}`)))
+        .rejects.toThrow('最多匯出 100')
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    })
+
+    it('reports an expired session instead of treating its response as a CSV', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce(csrfBootstrap())
+        .mockResolvedValueOnce(sessionEstablished())
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Session expired' }), { status: 401 })))
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { exportAdminTicketsCsv } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+
+      await expect(exportAdminTicketsCsv(['CS-2026-001'])).rejects.toThrow('管理員登入已失效')
+    })
+
     it('forces Mock list data in production regardless of the configured mode', async () => {
       vi.stubEnv('PROD', true)
       vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')

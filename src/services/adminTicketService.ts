@@ -496,6 +496,45 @@ export async function fetchAdminTickets(): Promise<AdminTicket[]> {
   return parseAdminTicketsResponse(payload)
 }
 
+export async function exportAdminTicketsCsv(ticketIds: string[]): Promise<Blob> {
+  if (ticketIds.length === 0) throw new Error('沒有符合篩選條件的工單可匯出。')
+  if (ticketIds.length > 100) throw new Error('n8n 每次最多匯出 100 筆工單，請縮小篩選範圍後再試。')
+
+  let response: Response
+  try {
+    response = await adminApiFetch('/api/admin/export-tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/csv' },
+      body: JSON.stringify({ ticket_ids: ticketIds }),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === '請先登入後台。') throw error
+    throw new Error('無法連線至 CSV 匯出服務，請稍後重試。')
+  }
+
+  if (response.status === 401) throw new Error('管理員登入已失效，請重新登入。')
+  if (!response.ok) {
+    let message = `CSV 匯出失敗（HTTP ${response.status}），請稍後重試。`
+    try {
+      const payload: unknown = await response.json()
+      if (isRecord(payload)) {
+        const detail = firstString(payload, ['message', 'error', 'detail'])
+        if (detail) message = `${detail}（HTTP ${response.status}）`
+      }
+    } catch {
+      // Keep the HTTP error message when the upstream response is not JSON.
+    }
+    throw new Error(message)
+  }
+
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  if (contentType !== 'text/csv' && contentType !== 'application/csv') {
+    throw new Error('CSV 匯出服務回傳的內容不是 CSV，未下載檔案。')
+  }
+
+  return response.blob()
+}
+
 export async function startAdminTicketReview(ticketId: string): Promise<void> {
   if (!ticketId.trim()) throw new Error('請先選取要開始審核的工單。')
 

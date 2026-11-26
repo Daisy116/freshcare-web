@@ -7,8 +7,9 @@ import { mockAdminTickets } from '../src/services/adminTicketService'
 const { routerPushMock } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
 }))
-const { downloadCsvMock } = vi.hoisted(() => ({
+const { downloadCsvMock, exportCsvMock } = vi.hoisted(() => ({
   downloadCsvMock: vi.fn(),
+  exportCsvMock: vi.fn(() => Promise.resolve(new Blob(['ticket csv'], { type: 'text/csv' }))),
 }))
 
 vi.mock('vue-router', () => ({
@@ -21,7 +22,13 @@ vi.mock('../src/utils/adminTicketCsv', async () => {
   return { ...actual, downloadAdminTicketsCsv: downloadCsvMock }
 })
 
+vi.mock('../src/services/adminTicketService', async () => {
+  const actual = await vi.importActual<typeof import('../src/services/adminTicketService')>('../src/services/adminTicketService')
+  return { ...actual, exportAdminTicketsCsv: exportCsvMock }
+})
+
 import { downloadAdminTicketsCsv } from '../src/utils/adminTicketCsv'
+import { exportAdminTicketsCsv } from '../src/services/adminTicketService'
 
 async function chooseFilterOption(wrapper: VueWrapper, label: string, value: string) {
   await wrapper.get(`[role="combobox"][aria-label="${label}"]`).trigger('click')
@@ -118,30 +125,34 @@ describe('admin dashboard', () => {
     expect(wrapper.findAll('.admin-kpi-value').map((element) => element.text())).toEqual(kpisBeforeFiltering)
   })
 
-  it('exports all matching tickets and disables export when filters return no tickets', async () => {
+  it('exports all matching ticket IDs and disables export when filters return no tickets', async () => {
     wrapper = mount(AdminDashboardPage)
     const exportButton = wrapper.get('.admin-export-button')
 
     expect(exportButton.attributes('disabled')).toBeUndefined()
     await wrapper.get('input[aria-label="搜尋工單編號、顧客姓名或訂單號"]').setValue('no-matching-ticket')
     expect(wrapper.get('.admin-export-button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('沒有符合篩選條件的工單可匯出。')
+    expect(exportAdminTicketsCsv).not.toHaveBeenCalled()
 
     await wrapper.get('input[aria-label="搜尋工單編號、顧客姓名或訂單號"]').setValue('')
     await wrapper.get('.admin-export-button').trigger('click')
     await nextTick()
 
+    expect(exportAdminTicketsCsv).toHaveBeenCalledOnce()
+    const [ticketIds] = vi.mocked(exportAdminTicketsCsv).mock.calls[0]!
+    expect(ticketIds).toEqual(mockAdminTickets.map((ticket) => ticket.id))
     expect(downloadAdminTicketsCsv).toHaveBeenCalledOnce()
-    const [csv, filename] = vi.mocked(downloadAdminTicketsCsv).mock.calls[0]!
+    const [blob, filename] = vi.mocked(downloadAdminTicketsCsv).mock.calls[0]!
+    expect(blob).toBeInstanceOf(Blob)
     expect(filename).toMatch(/^FreshCare_Tickets_\d{8}\.csv$/)
-    expect(csv.split('\r\n')).toHaveLength(mockAdminTickets.length + 1)
 
     await wrapper.get('input[aria-label="搜尋工單編號、顧客姓名或訂單號"]').setValue('CS-2026-0517-098')
     await wrapper.get('.admin-export-button').trigger('click')
     await nextTick()
 
-    const [filteredCsv] = vi.mocked(downloadAdminTicketsCsv).mock.calls[1]!
-    expect(filteredCsv).toContain('CS-2026-0517-098')
-    expect(filteredCsv).not.toContain('CS-2026-0518-042')
+    const [filteredIds] = vi.mocked(exportAdminTicketsCsv).mock.calls[1]!
+    expect(filteredIds).toEqual(['CS-2026-0517-098'])
   })
 
   it('applies KPI status filters, clears other filters, keeps KPI values fixed and does not scroll', async () => {

@@ -15,6 +15,7 @@ const ADMIN_API_PATHS = new Map([
   ['/request-supplement', '/webhook/freshcare/request-supplement'],
   ['/close-ticket', '/webhook/freshcare/close-ticket'],
   ['/ticket-detail', '/webhook/freshcare/admin/ticket-detail'],
+  ['/export-tickets', '/webhook/freshcare/export-tickets'],
 ])
 
 function createEncryptedSessionStore(databasePath, encryptionKey) {
@@ -346,13 +347,21 @@ export function createAdminSessionApp({
         ...(request.method === 'POST' ? { body: JSON.stringify(request.body ?? {}) } : {}),
         signal: AbortSignal.timeout(30_000),
       })
-      const body = await upstreamResponse.text()
       if (upstreamResponse.status === 401) {
         await destroySession(request)
         response.clearCookie(SESSION_COOKIE_NAME, cookieOptions)
       }
       const contentType = upstreamResponse.headers.get('content-type')
       if (contentType) response.setHeader('Content-Type', contentType)
+      if (request.path === '/export-tickets') {
+        const contentDisposition = upstreamResponse.headers.get('content-disposition')
+        if (contentDisposition) response.setHeader('Content-Disposition', contentDisposition)
+        const body = Buffer.from(await upstreamResponse.arrayBuffer())
+        response.status(upstreamResponse.status)
+        return response.end(body)
+      }
+
+      const body = await upstreamResponse.text()
       response.status(upstreamResponse.status)
       if (!body) return response.end()
       return response.send(body)

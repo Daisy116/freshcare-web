@@ -34,6 +34,12 @@ function createUpstream() {
       return response.end()
     }
 
+    if (request.url === '/webhook/freshcare/export-tickets') {
+      response.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      response.setHeader('Content-Disposition', 'attachment; filename="FreshCare_Tickets_20261126.csv"')
+      return response.end(Buffer.from([0xef, 0xbb, 0xbf, 0x43, 0x53, 0x2d, 0x31]))
+    }
+
     response.setHeader('Content-Type', 'application/json')
     response.end(JSON.stringify({ success: true, forwardedPath: request.url, forwardedBody: body }))
   })
@@ -81,6 +87,13 @@ test('protects management APIs and persists an encrypted session across backend 
   sessionServer = await startSessionServer(databasePath, upstreamBase)
   const unauthenticated = await fetch(`${sessionServer.baseUrl}/api/admin/tickets`)
   assert.equal(unauthenticated.status, 401)
+  assert.equal(upstream.calls.length, 0)
+  const unauthenticatedExport = await fetch(`${sessionServer.baseUrl}/api/admin/export-tickets`, {
+    method: 'POST',
+    headers: { Origin: appOrigin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket_ids: ['CS-2026-001'] }),
+  })
+  assert.equal(unauthenticatedExport.status, 401)
   assert.equal(upstream.calls.length, 0)
 
   const csrfResponse = await fetch(`${sessionServer.baseUrl}/api/admin/session/csrf`)
@@ -177,6 +190,25 @@ test('protects management APIs and persists an encrypted session across backend 
     ticket_id: 'FC-100',
     review_note: '已確認案件已妥善處理。',
   })
+
+  const exportedCsv = await fetch(`${sessionServer.baseUrl}/api/admin/export-tickets`, {
+    method: 'POST',
+    headers: {
+      Origin: appOrigin,
+      'X-CSRF-Token': loginBody.csrfToken,
+      'Content-Type': 'application/json',
+      Accept: 'text/csv',
+      Cookie: cookie,
+    },
+    body: JSON.stringify({ ticket_ids: ['CS-2026-001', 'CS-2026-002'] }),
+  })
+  assert.equal(exportedCsv.status, 200)
+  assert.equal(exportedCsv.headers.get('content-type'), 'text/csv; charset=utf-8')
+  assert.equal(exportedCsv.headers.get('content-disposition'), 'attachment; filename="FreshCare_Tickets_20261126.csv"')
+  assert.deepEqual(Buffer.from(await exportedCsv.arrayBuffer()), Buffer.from([0xef, 0xbb, 0xbf, 0x43, 0x53, 0x2d, 0x31]))
+  assert.equal(upstream.calls.at(-1).path, '/webhook/freshcare/export-tickets')
+  assert.equal(upstream.calls.at(-1).authorization, 'Basic c3RhZmY6c2VjcmV0')
+  assert.deepEqual(JSON.parse(upstream.calls.at(-1).body), { ticket_ids: ['CS-2026-001', 'CS-2026-002'] })
 
   const csrfRejected = await fetch(`${sessionServer.baseUrl}/api/admin/assign-ticket`, {
     method: 'POST',

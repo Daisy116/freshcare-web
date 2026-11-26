@@ -13,6 +13,7 @@ import {
   adminTicketsMode,
   calculateAdminTicketKpis,
   closeAdminTicket,
+  exportAdminTicketsCsv,
   fetchAdminTicketDetail,
   fetchAdminTickets,
   filterAdminTickets,
@@ -23,7 +24,7 @@ import {
 import type { AdminTicket, AdminTicketDetailStatus, AdminTicketPriority, AdminTicketStatus, AdminTicketStatusGroup } from '@/types/adminTicket'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 import { getTicketStatusLabel } from '@/utils/ticketStatus'
-import { createAdminTicketsCsv, downloadAdminTicketsCsv, getAdminTicketsCsvFilename } from '@/utils/adminTicketCsv'
+import { downloadAdminTicketsCsv, getAdminTicketsCsvFilename } from '@/utils/adminTicketCsv'
 
 const router = useRouter()
 const search = ref('')
@@ -484,17 +485,24 @@ function resetFilters() {
 }
 
 async function exportTicketsCsv() {
-  if (!visibleTickets.value.length || loadStatus.value !== 'ready' || exportingCsv.value) return
+  if (exportingCsv.value || loadStatus.value !== 'ready') return
+  if (!visibleTickets.value.length) {
+    exportError.value = '沒有符合篩選條件的工單可匯出。'
+    return
+  }
+  if (visibleTickets.value.length > 100) {
+    exportError.value = 'n8n 每次最多匯出 100 筆工單，請縮小篩選範圍後再試。'
+    return
+  }
 
   exportingCsv.value = true
   exportError.value = ''
   await nextTick()
   try {
-    const csv = createAdminTicketsCsv(visibleTickets.value)
-    downloadAdminTicketsCsv(csv, getAdminTicketsCsvFilename())
+    const blob = await exportAdminTicketsCsv(visibleTickets.value.map((ticket) => ticket.id))
+    downloadAdminTicketsCsv(blob, getAdminTicketsCsvFilename())
   } catch (cause) {
-    console.error('Unable to export filtered admin tickets:', cause)
-    exportError.value = '匯出 CSV 失敗，請稍後重試。'
+    exportError.value = cause instanceof Error ? cause.message : '匯出 CSV 失敗，請稍後重試。'
   } finally {
     exportingCsv.value = false
   }
@@ -579,6 +587,7 @@ async function exportTicketsCsv() {
             :aria-busy="exportingCsv"
             @click="exportTicketsCsv"
           >{{ exportingCsv ? '◌　匯出中…' : '⇩　匯出 CSV' }}</button>
+          <span v-if="loadStatus === 'ready' && !visibleTickets.length" class="admin-export-error" role="status">沒有符合篩選條件的工單可匯出。</span>
           <span v-if="exportError" class="admin-export-error" role="alert">{{ exportError }}</span>
         </section>
 

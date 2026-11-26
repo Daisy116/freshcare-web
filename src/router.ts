@@ -6,6 +6,7 @@ import SuccessPage from '@/pages/SuccessPage.vue'
 import TrackPage from '@/pages/TrackPage.vue'
 import AdminLoginPage from '@/pages/AdminLoginPage.vue'
 import AdminDashboardPage from '@/pages/AdminDashboardPage.vue'
+import AdminReportsPage from '@/pages/AdminReportsPage.vue'
 import { adminAuthMode, isAdminAuthenticated, restoreAdminSession } from '@/services/adminAuthService'
 
 const router = createRouter({
@@ -31,6 +32,11 @@ const router = createRouter({
       name: 'admin-dashboard',
       component: AdminDashboardPage,
     },
+    {
+      path: '/admin/reports',
+      name: 'admin-reports',
+      component: AdminReportsPage,
+    },
     { path: '/:pathMatch(.*)*', redirect: '/contact' },
   ],
 })
@@ -38,17 +44,17 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (!to.path.startsWith('/admin')) return true
   if (adminAuthMode !== 'api') {
-    return to.name === 'admin-dashboard' && !isAdminAuthenticated() ? { name: 'admin-login' } : true
+    return to.name !== 'admin-login' && !isAdminAuthenticated() ? { name: 'admin-login' } : true
   }
 
   try {
     const authenticated = await restoreAdminSession()
-    if (to.name === 'admin-dashboard' && !authenticated) return { name: 'admin-login' }
+    if (to.name !== 'admin-login' && !authenticated) return { name: 'admin-login' }
     if (to.name === 'admin-login' && authenticated && to.query.notice !== 'logout-failed') {
       return { name: 'admin-dashboard' }
     }
   } catch {
-    if (to.name === 'admin-dashboard') return { name: 'admin-login', query: { notice: 'session-unavailable' } }
+    if (to.name !== 'admin-login') return { name: 'admin-login', query: { notice: 'session-unavailable' } }
   }
   return true
 })

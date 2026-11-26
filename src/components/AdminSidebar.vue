@@ -39,7 +39,7 @@ defineEmits<{ close: []; logout: []; toggle: [] ; openGuide: []}>()
       <div class="admin-sidebar-group">
         <span class="admin-sidebar-label admin-sidebar-text">核心業務模組</span>
         <nav>
-          <RouterLink class="admin-sidebar-link active" to="/admin/dashboard" aria-label="工單管理" data-tooltip="工單管理" @click="$emit('close')"><span class="admin-sidebar-icon" aria-hidden="true">▣</span><span class="admin-sidebar-text">工單管理</span></RouterLink>
+          <RouterLink class="admin-sidebar-link" active-class="active" exact-active-class="active" to="/admin/dashboard" aria-label="工單管理" data-tooltip="工單管理" @click="$emit('close')"><span class="admin-sidebar-icon" aria-hidden="true">▣</span><span class="admin-sidebar-text">工單管理</span></RouterLink>
           <button
             class="admin-sidebar-link"
             type="button"
@@ -50,7 +50,7 @@ defineEmits<{ close: []; logout: []; toggle: [] ; openGuide: []}>()
             <span class="admin-sidebar-icon" aria-hidden="true">ⓘ</span>
             <span class="admin-sidebar-text">工單流程說明</span>
           </button>
-          <a class="admin-sidebar-link disabled" role="link" tabindex="0" aria-disabled="true" aria-label="統計報表，尚未開放" data-tooltip="統計報表（尚未開放）"><span class="admin-sidebar-icon" aria-hidden="true">⌁</span><span class="admin-sidebar-text">統計報表</span></a>
+          <RouterLink class="admin-sidebar-link" active-class="active" to="/admin/reports" aria-label="統計報表" data-tooltip="統計報表" @click="$emit('close')"><span class="admin-sidebar-icon" aria-hidden="true">⌁</span><span class="admin-sidebar-text">統計報表</span></RouterLink>
         </nav>
       </div>
     </div>
