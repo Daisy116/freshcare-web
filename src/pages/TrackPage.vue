@@ -2,8 +2,8 @@
 import { ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import FormInput from '@/components/FormInput.vue'
-import StatusTimeline from '@/components/StatusTimeline.vue'
 import { getTicketStatus, ticketSubmissionMode } from '@/services/ticketService'
+import { fetchApiProducts } from '@/services/productService'
 import type { TicketStatus } from '@/types/ticket'
 import { getIssueTypeLabel } from '@/utils/ticketIssueType'
 
@@ -30,11 +30,22 @@ async function searchTicket() {
     const lookup = await getTicketStatus(ticketNumber.value, email.value)
     if (lookup.kind === 'not-found') {
       notice.value = ticketSubmissionMode === 'mock'
-        ? '查無此工單，請確認編號是否正確。Mock 工單僅在本次頁面工作階段有效。'
-        : '查無此工單，請確認工單編號是否正確。'
+        ? '查無此工單，請確認編號是否正確。'
+        : '查無資料，請確認工單編號以及驗證 Email 是否正確。'
     }
     else if (lookup.kind === 'verification-failed') error.value = '驗證資訊不正確，請確認案件建立時使用的 Email。'
-    else result.value = lookup.ticket
+    else {
+      result.value = lookup.ticket
+      // Resolve names from the real catalog only; never substitute mock products.
+      if (!lookup.ticket.productName && lookup.ticket.productId) {
+        try {
+          const products = await fetchApiProducts()
+          result.value.productName = products.find(product => product.id === lookup.ticket.productId)?.name
+        } catch {
+          // Keep the verified ticket visible when the catalog is unavailable.
+        }
+      }
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '查詢時發生錯誤，請稍後再試。'
   } finally {
@@ -50,7 +61,7 @@ async function searchTicket() {
     <div class="track-layout">
       <section class="form-card track-form"><div class="section-heading"><span class="step-number">⌕</span><div><h2>查詢您的案件</h2><p>請使用提交案件時填寫的 Email 進行驗證</p></div></div>
         <form class="track-fields" @submit.prevent="searchTicket">
-          <FormInput id="ticket-number" v-model="ticketNumber" label="工單編號" placeholder="例：FC20261117-AB12" required />
+          <FormInput id="ticket-number" v-model="ticketNumber" label="工單編號" placeholder="例：CS-2026-90BE8455B8E2" required />
           <FormInput id="verification-email" v-model="email" label="驗證 Email" type="email" placeholder="建立案件時使用的 Email" required />
           <p v-if="error" class="form-error-banner" role="alert">{{ error }}</p><p v-if="notice" class="form-notice" role="status">{{ notice }}</p>
           <p v-if="isLoading" class="muted-text" role="status" aria-live="polite">正在查詢案件進度…</p>
@@ -59,19 +70,29 @@ async function searchTicket() {
         </form>
       </section>
       <section v-if="result" class="form-card track-result" aria-live="polite">
-        <div class="result-heading"><div><span class="status-badge">● {{ result.status }}</span><h2>{{ result.ticketNumber }}</h2></div><time :datetime="result.submittedAt">提交於 {{ new Date(result.submittedAt).toLocaleString('zh-TW') }}</time></div>
+        <div class="result-heading"><div><span class="status-badge">● {{ result.status }}</span><h2>工單案件編號：{{ result.ticketNumber }}</h2></div><time :datetime="result.submittedAt">提交於 {{ new Date(result.submittedAt).toLocaleString('zh-TW') }}</time></div>
         <p v-if="result.statusWarning" class="form-notice" role="status">此工單回傳未知狀態，狀態資訊待確認。</p>
-        <dl v-if="result.productName || result.productId || result.issueType || result.orderNumber || result.reviewStatus || result.closedAt" class="detail-grid track-ticket-details">
-          <div v-if="result.productName || result.productId"><dt>{{ result.productName ? '商品名稱' : '商品編號' }}</dt><dd>{{ result.productName || result.productId }}</dd></div>
+        <dl class="detail-grid track-ticket-details">
+          <div><dt>商品名稱</dt><dd>{{ result.productName || '尚未提供商品名稱' }}</dd></div>
           <div v-if="result.issueType"><dt>問題類型</dt><dd>{{ getIssueTypeLabel(result.issueType) }}</dd></div>
-          <div v-if="result.orderNumber"><dt>訂單編號</dt><dd>{{ result.orderNumber }}</dd></div>
-          <div v-if="result.reviewStatus"><dt>審核狀態</dt><dd>{{ result.reviewStatus }}</dd></div>
+          <div><dt>訂單編號</dt><dd>{{ result.orderNumber || '未提供' }}</dd></div>
+          <div v-if="result.purchaseQuantity"><dt>購買數量</dt><dd>{{ result.purchaseQuantity }}</dd></div>
+          <div v-if="result.purchaseChannel"><dt>購買管道</dt><dd>{{ result.purchaseChannel }}</dd></div>
+          <div><dt>收貨日期</dt><dd>{{ result.receivedDate ? new Date(result.receivedDate).toLocaleDateString('zh-TW') : '未提供' }}</dd></div>
           <div v-if="result.closedAt"><dt>結案時間</dt><dd>{{ new Date(result.closedAt).toLocaleString('zh-TW') }}</dd></div>
+          <div v-if="result.customerDescription" class="detail-wide"><dt>顧客描述</dt><dd class="customer-description">{{ result.customerDescription }}</dd></div>
         </dl>
-        <p v-if="result.reviewStatusWarning" class="form-notice" role="status">此工單回傳未知審核狀態，狀態資訊待確認。</p>
-        <StatusTimeline :items="result.timeline" />
       </section>
-      <aside v-else class="side-card track-help"><h2>找不到工單編號？</h2><p>提交完成頁會顯示模擬工單編號。此展示版本的工單僅保留於目前瀏覽器工作階段，重新整理後資料即會清除。</p><RouterLink class="text-link" to="/contact">前往問題反映 →</RouterLink></aside>
+      <aside v-else class="side-card track-help"><h2>找不到工單編號？</h2><p>以下提供幾組已建立好的工單編號 / Email：<br/>CS-2026-59928BABC147 / freshcare.demo20@example.com<br/>CS-2026-29A88A6E2E3F / freshcare.demo16@example.com<br/>CS-2026-CD497AA9E979 / freshcare.test27@example.com</p></aside>
     </div>
   </div>
 </template>
+
+<style scoped>
+.customer-history { margin-top: 24px; }
+.customer-history h3 { font-size: 16px; }
+.customer-history li, .customer-history p { font-size: 12px; }
+.customer-history strong { display: block; }
+.customer-description, .customer-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.track-ticket-details dd { overflow-wrap: anywhere; }
+</style>

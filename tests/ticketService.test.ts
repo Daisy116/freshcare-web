@@ -118,8 +118,8 @@ describe('API ticket submission', () => {
           issueType: '品質問題',
           orderNumber: 'ORDER-123',
           timeline: [
-            { title: '已受理', description: '案件已建立', timestamp: '2026-11-17T12:00:00.000Z', complete: true },
-            { title: '審核中', description: '專員正在確認', timestamp: '', complete: false },
+            { title: '已受理', description: '已收到您的問題反映。', timestamp: '2026-11-17T12:00:00.000Z', complete: true },
+            { title: '審核中', description: '客服人員正在確認您的問題。', timestamp: '', complete: false },
           ],
         },
       })

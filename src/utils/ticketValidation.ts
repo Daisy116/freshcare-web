@@ -7,6 +7,9 @@ export function validateTicket(form: TicketForm, availableProductIds?: string[])
   const errors: Record<string, string> = {}
 
   if (!form.name.trim()) errors.name = '請填寫姓名。'
+  if (form.phone.trim() && !/^09[0-9]{8}$/.test(form.phone.trim())) {
+    errors.phone = '請輸入有效的台灣手機號碼（09 開頭，共 10 碼數字）。'
+  }
   if (!form.email.trim()) errors.email = '請填寫 Email。'
   else if (!emailPattern.test(form.email.trim())) errors.email = '請輸入有效的 Email 格式。'
   if (orderRelatedIssues.has(form.issueType) && !form.orderNumberUnavailable && !form.orderNumber.trim()) {

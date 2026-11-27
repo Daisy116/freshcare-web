@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FormInput from '@/components/FormInput.vue'
 import FormSelect from '@/components/FormSelect.vue'
-import ImageUploader from '@/components/ImageUploader.vue'
 import ProductSelector from '@/components/ProductSelector.vue'
 import { useTicketDraft } from '@/composables/useTicketDraft'
 import { useProducts } from '@/composables/useProducts'
@@ -54,7 +53,6 @@ const { products, status: productsStatus, error: productsError, source: products
 const router = useRouter()
 const route = useRoute()
 const errors = reactive<Record<string, string>>({})
-const photoError = ref('')
 const issueOptions = [
   { value: 'quality', label: '商品品質／腐敗異常（碰撞、壓傷、出水、熟度不均）' },
   { value: 'shipping-damage', label: '商品破損／配送外箱擠壓損傷' },
@@ -75,15 +73,10 @@ const orderNumberRequired = computed(() => isOrderRelatedIssue(draft.issueType))
 const missingDraftNotice = computed(() => route.query.notice === 'missing')
 onMounted(() => { void loadProducts() })
 
-function setPhotoError(message: string) {
-  photoError.value = message
-}
-
 function nextStep() {
   Object.keys(errors).forEach((key) => delete errors[key])
   Object.assign(errors, validateTicket(draft, selectedDemoOrder.value ? [selectedDemoOrder.value.product_id] : products.value.map((product) => product.id)))
-  if (draft.photos.length > 5) photoError.value = '照片最多只能上傳 5 張。'
-  if (Object.keys(errors).length || photoError.value) {
+  if (Object.keys(errors).length) {
     document.querySelector('.has-error, [aria-invalid="true"], .field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     return
   }
@@ -101,7 +94,6 @@ function nextStep() {
         <div class="hero-title"><h1>商品問題反映</h1><span>專人協助處理</span></div>
         <p>我們重視每一位顧客的購物體驗。<br/>若您收到的商品有破損、腐壞、配送異常或其他問題，請填寫以下表單並提供相關資訊，客服團隊將協助您確認與處理。</p>
       </div>
-      <div class="hero-promise"><span class="promise-icon">❄</span><div><strong>全程低溫冷鏈直送保證</strong><small>收到包裹 24 小時內受理專案退換或賠付補寄</small></div></div>
     </section>
 
     <div class="content-grid">
@@ -110,10 +102,14 @@ function nextStep() {
           <div class="section-heading"><span class="step-number">1</span><div><h2>顧客聯絡資訊</h2><p>請確認您的聯絡管道，以便第一時間接收處理方案進度</p></div></div>
           <div class="form-grid">
             <FormInput id="customer-name" v-model="draft.name" label="顧客姓名" placeholder="例：林書豪" required :error="errors.name" />
-            <FormInput id="customer-phone" v-model="draft.phone" label="聯絡電話" placeholder="例：0912-345-678" hint="選填，方便客服電話說明" />
-            <FormInput id="customer-email" v-model="draft.email" label="電子信箱 Email" type="email" placeholder="例：service@example.com" required hint="我們將以此 Email 提供案件進度" :error="errors.email" class="wide-field" />
+            <FormInput id="customer-phone" v-model="draft.phone" label="聯絡電話" optional type="tel" placeholder="例：0912345678" :error="errors.phone" />
+            <FormInput id="customer-email" v-model="draft.email" label="電子信箱 Email" type="email" placeholder="例：service@example.com" required :error="errors.email" class="wide-field" />
             <div class="wide-field field">
-              <div class="order-label-row"><label class="field-label" for="order-number">訂單編號 <span v-if="orderNumberRequired" class="required-mark">*</span><span v-else class="optional-note">（選填）</span></label>
+              <div class="order-label-row">
+                <label class="field-label" for="order-number">訂單編號 
+                  <span v-if="orderNumberRequired" class="required-mark">*</span>
+                  <span v-else class="optional-note">（選填）</span>
+                </label>
                 <label class="checkbox-label compact"><input :checked="draft.orderNumberUnavailable" type="checkbox" @change="changeUnavailable" /><span>我目前無法提供訂單編號</span></label>
               </div>
               <input id="order-number" v-model="draft.orderNumber" class="text-control" :class="{ 'has-error': errors.orderNumber }" placeholder="例：FC20250518-8921" :disabled="draft.orderNumberUnavailable" :readonly="!!selectedDemoOrder" />
@@ -157,14 +153,13 @@ function nextStep() {
         </section>
 
         <section class="form-card">
-          <div class="section-heading"><span class="step-number">3</span><div><h2>問題詳情與證明照片</h2><p>請盡可能提供清晰照片，幫助品管專員精準研判原因</p></div></div>
+          <div class="section-heading"><span class="step-number">3</span><div><h2>問題詳情</h2><p>請詳細描述商品狀況與發生時間，以利客服人員確認問題</p></div></div>
           <FormSelect id="issue-type" v-model="draft.issueType" label="問題類型" :options="issueOptions" required :error="errors.issueType" />
           <div class="field description-field">
             <div class="description-label"><label class="field-label" for="issue-description">問題詳細描述 <span class="required-mark">*</span> <span class="optional-note">（至少 10 字）</span></label><small>{{ draft.description.length }} / 500 字</small></div>
             <textarea id="issue-description" v-model="draft.description" class="text-control textarea-control" :class="{ 'has-error': errors.description }" rows="5" maxlength="500" placeholder="請描述商品狀況、發生時間及遇到的問題，例如拆箱時的果況或外箱受損情況……" />
             <small v-if="errors.description" class="field-error" role="alert">{{ errors.description }}</small>
           </div>
-          <ImageUploader v-model="draft.photos" :error="photoError" @error="setPhotoError" />
           <fieldset class="field resolution-field no-border">
             <legend class="field-label">希望處理方式 <span class="required-mark">*</span></legend>
             <label v-for="resolution in resolutions" :key="resolution.value" class="resolution-option" :class="{ chosen: draft.resolution === resolution.value }">
@@ -175,23 +170,52 @@ function nextStep() {
           </fieldset>
         </section>
 
-        <section class="form-card submit-card">
-          <label class="consent-box"><input v-model="draft.privacyAccepted" type="checkbox" /><span>我已閱讀並同意《個人資料蒐集與處理條款》及《生鮮農產品驗收與退換貨規範》。本人確認提供之照片與反映情況皆屬真實。</span></label>
-          <small v-if="errors.privacyAccepted" class="field-error" role="alert">{{ errors.privacyAccepted }}</small>
+        <!-- <section class="form-card submit-card"> -->
+          <label class="consent-box"><input v-model="draft.privacyAccepted" type="checkbox" /><span>我已閱讀並同意《個人資料蒐集與處理條款》及《生鮮農產品驗收與退換貨規範》。本人確認反映情況皆屬真實。</span></label>
+          <small v-if="errors.privacyAccepted" class="field-error consent-error" role="alert">{{ errors.privacyAccepted }}</small>
           <div class="submit-row"><span class="security-note"></span><button class="primary-button" type="submit">下一步：確認資料 <span aria-hidden="true">→</span></button></div>
-        </section>
+        <!-- </section> -->
       </form>
 
       <aside class="sidebar">
-        <section class="side-card"><h2>⌁　售後處理標準流程</h2><ol class="process-list"><li><strong>Step 1：送出問題反映</strong><p>線上填寫表單，提供商品與問題描述。</p></li><li><strong>Step 2：專業品管鑑定</strong><p>專員確認商品批次與配送狀況。</p></li><li><strong>Step 3：專人回覆方案</strong><p>以您提供的聯絡方式說明處理結果。</p></li><li><strong>Step 4：結案與新鮮送達</strong><p>依確認方案安排退款或補寄。</p></li></ol></section>
-        <section class="side-card muted-card"><h2>ⓘ　生鮮水果驗收須知</h2><ul class="notice-list"><li>水果屬高度時效性農產品，簽收後請盡早冷藏並檢視外箱與果況。</li><li>請提供清晰的瑕疵照片，有助於專員更快速確認情況。</li><li>在客服專員回覆前，請將原包裝與商品妥善冷藏保存。</li></ul></section>
-        <section class="side-card"><h2>專屬果品客服專線</h2><p class="side-subtitle">若遇緊急狀況，可透過以下方式獲得協助</p><div class="contact-tile"><span>☎</span><div><small>免付費專線（週一至週五 09:00 - 18:00）</small><strong>0800-888-920</strong></div></div><a class="contact-tile" href="mailto:service@freshcarefruit.tw"><span>✉</span><div><small>品管客訴信箱</small><strong>service@freshcarefruit.tw</strong></div></a></section>
+        <section class="side-card customer-process"><h2><span class="process-icon" aria-hidden="true">⌁</span><span>客服工單處理流程</span></h2><ol class="process-list"><li><strong>Step 1：提交問題反映</strong><p>填寫商品資訊與問題描述，送出後取得工單編號。</p></li><li><strong>Step 2：工單受理與分析</strong><p>系統建立工單，管理人員可使用 AI 輔助分類與判斷處理優先級。</p></li><li><strong>Step 3：人工審核與處置</strong><p>管理人員確認問題內容，決定分派部門、要求補充資料或直接結案。</p></li><li><strong>Step 4：查詢工單進度</strong><p>使用工單編號與電子信箱，查詢目前處理狀態。</p></li></ol></section>
+        
+        <section class="side-card"><h2>專屬果品客服專線</h2><div class="contact-tile"><span>☎</span><div><small>免付費專線（週一至週五 09:00 - 18:00）</small><strong>0800-888-920</strong></div></div><a class="contact-tile" href="mailto:service@freshcarefruit.tw"><span>✉</span><div><small>品管客訴信箱</small><strong>service@freshcarefruit.tw</strong></div></a></section>
       </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* Move the message within its existing flow space so the button stays in place. */
+.consent-error { position: relative; top: -10px; }
+.hero-banner { display: block; }
+.hero-copy, .hero-copy > p { max-width: none; }
+.customer-process h2 { display: flex; align-items: center; gap: 12px; }
+.process-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; font-size: 28px; line-height: 1; }
+.customer-process .process-list::before { display: none; }
+.customer-process .process-list strong { display: block; line-height: 18px; }
+.customer-process .process-list li::before {
+  box-sizing: border-box;
+  top: 3px;
+  left: -24px;
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: #3d7248;
+  box-shadow: none;
+  z-index: 1;
+}
+.customer-process .process-list li:not(:last-child)::after {
+  position: absolute;
+  top: 9px;
+  bottom: -28px;
+  left: -19px;
+  width: 2px;
+  background: #deece0;
+  content: '';
+}
+
 .demo-orders { margin-top: 14px; border: 1px solid #d6dfcc; border-radius: 12px; background: #f7f8ef; overflow: hidden; }
 .demo-toggle { width: 100%; display: flex; justify-content: space-between; padding: 14px 16px; background: transparent; border: 0; color: #425c3b; font: inherit; font-weight: 600; cursor: pointer; }
 .demo-body { padding: 0 16px 16px; }

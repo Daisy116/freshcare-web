@@ -1,3 +1,4 @@
+import { customerTicketTimeline } from '@/utils/customerTicketTimeline'
 import type { SubmittedTicket, TicketForm, TicketLookupApiEvent, TicketLookupApiTicket, TicketLookupResult, TicketStatus, TicketSubmissionResponse } from '@/types/ticket'
 import {
   getReviewStatusLabel,
@@ -37,7 +38,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTicketLookupApiEvent(value: unknown): value is TicketLookupApiEvent {
   if (!isRecord(value)) return false
-  const stringFields = ['title', 'status', 'event', 'event_type', 'description', 'timestamp', 'created_at', 'occurred_at']
+  const stringFields = ['title', 'status', 'event', 'event_type', 'description', 'timestamp', 'created_at', 'occurred_at', 'supplement_request', 'public_close_note']
   return stringFields.every((field) => value[field] === undefined || typeof value[field] === 'string')
     && (value.complete === undefined || typeof value.complete === 'boolean')
 }
@@ -91,27 +92,7 @@ function parseTicketStatus(value: unknown): TicketStatus {
   }
 
   const rawEvents = ticket.events ?? ticket.timeline
-  const timeline: TicketStatus['timeline'] = Array.isArray(rawEvents) ? rawEvents.map((event, index) => {
-    if (!isRecord(event)) {
-      throw new Error(`案件查詢 API 第 ${index + 1} 筆事件格式不正確，請稍後重試。`)
-    }
-    const title = event.title ?? event.status ?? event.event ?? event.event_type
-    const timestamp = event.timestamp ?? event.created_at ?? event.occurred_at ?? ''
-    const description = event.description ?? ''
-    if (typeof title !== 'string' || !title.trim()
-      || typeof description !== 'string'
-      || typeof timestamp !== 'string'
-      || (timestamp !== '' && !Number.isFinite(Date.parse(timestamp)))
-      || (event.complete !== undefined && typeof event.complete !== 'boolean')) {
-      throw new Error(`案件查詢 API 第 ${index + 1} 筆事件格式不正確，請稍後重試。`)
-    }
-    return {
-      title: getTicketStatusLabel(title),
-      description,
-      timestamp,
-      complete: typeof event.complete === 'boolean' ? event.complete : timestamp !== '',
-    }
-  }) : []
+  const timeline = customerTicketTimeline(rawEvents ?? [])
 
   if (timeline.length === 0) {
     timeline.push({
@@ -129,6 +110,10 @@ function parseTicketStatus(value: unknown): TicketStatus {
     ...(!isKnownTicketStatus(ticket.ticket_status) ? { statusWarning: true } : {}),
     submittedAt: ticket.created_at,
     timeline,
+    ...(typeof ticket.purchase_quantity === 'number' && Number.isInteger(ticket.purchase_quantity) && ticket.purchase_quantity > 0 ? { purchaseQuantity: ticket.purchase_quantity } : {}),
+    ...(typeof ticket.purchase_channel === 'string' ? { purchaseChannel: ticket.purchase_channel } : {}),
+    ...(typeof ticket.received_date === 'string' && Number.isFinite(Date.parse(ticket.received_date)) ? { receivedDate: ticket.received_date } : {}),
+    ...(typeof ticket.customer_description === 'string' ? { customerDescription: ticket.customer_description } : {}),
     ...(typeof ticket.product_name === 'string' ? { productName: ticket.product_name } : {}),
     ...(typeof ticket.product_id === 'string' ? { productId: ticket.product_id } : {}),
     ...(typeof ticket.issue_type === 'string' ? { issueType: ticket.issue_type } : {}),

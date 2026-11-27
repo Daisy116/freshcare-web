@@ -56,12 +56,12 @@ describe('Demo order selection', () => {
   })
 
   it('shows loading, error with retry, and empty states', async () => {
-    let resolve!: (value: unknown) => void
+    let resolve!: (value: Response | PromiseLike<Response>) => void
     vi.mocked(fetch).mockImplementationOnce(() => new Promise(r => { resolve = r }) as Promise<Response>)
     const wrapper = mount(ContactPage)
     await wrapper.get('.demo-toggle').trigger('click')
     expect(wrapper.text()).toContain('正在載入 Demo 訂單')
-    resolve({ ok: false, status: 503 }); await flushPromises()
+    resolve(new Response(null, { status: 503 })); await flushPromises()
     expect(wrapper.get('.demo-body [role="alert"]').text()).toContain('HTTP 503')
     vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ success: true, count: 0, orders: [] }) } as Response)
     await wrapper.get('.demo-body button').trigger('click'); await flushPromises()

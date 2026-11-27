@@ -37,6 +37,18 @@ describe('ticket form validation', () => {
     expect(validateTicket(form).orderNumber).toBeUndefined()
   })
 
+  it('allows an empty phone and validates a supplied Taiwan mobile number', () => {
+    const form = validForm()
+    for (const phone of ['', '0912345678']) {
+      form.phone = phone
+      expect(validateTicket(form).phone).toBeUndefined()
+    }
+    for (const phone of ['21321', '091234567', '09123456789', '0212345678', '0912-345-678', '09abcdefgh']) {
+      form.phone = phone
+      expect(validateTicket(form).phone).toBeTruthy()
+    }
+  })
+
   it('reports invalid email, short description, and missing consent', () => {
     const form = validForm()
     form.email = 'not-an-email'

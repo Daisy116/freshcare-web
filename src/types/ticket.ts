@@ -51,6 +51,10 @@ export interface TicketLookupApiTicket {
   product_name?: string
   issue_type?: string
   order_number?: string
+  purchase_quantity?: number | null
+  purchase_channel?: string | null
+  received_date?: string | null
+  customer_description?: string | null
   ticket_status: string
   review_status?: string
   created_at: string
@@ -60,6 +64,8 @@ export interface TicketLookupApiTicket {
 }
 
 export interface TicketLookupApiEvent {
+  supplement_request?: string
+  public_close_note?: string
   title?: string
   status?: string
   event?: string
@@ -82,6 +88,10 @@ export interface TicketStatus {
   statusWarning?: boolean
   submittedAt: string
   timeline: TicketTimelineItem[]
+  purchaseQuantity?: number
+  purchaseChannel?: string
+  receivedDate?: string
+  customerDescription?: string
   productName?: string
   productId?: string
   issueType?: string

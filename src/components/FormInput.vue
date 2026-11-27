@@ -6,6 +6,7 @@ defineProps<{
   type?: string
   placeholder?: string
   required?: boolean
+  optional?: boolean
   hint?: string
   error?: string
   disabled?: boolean
@@ -16,7 +17,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 <template>
   <div class="field">
-    <label class="field-label" :for="id">{{ label }} <span v-if="required" class="required-mark">*</span></label>
+    <label class="field-label" :for="id">{{ label }} <span v-if="required" class="required-mark">*</span><span v-else-if="optional" class="optional-note">（選填）</span></label>
     <input
       :id="id"
       class="text-control"

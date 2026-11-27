@@ -11,7 +11,7 @@ import { RouterLink } from 'vue-router'
         <div class="footer-tags"><span>產地直送</span><span>安心檢驗</span><span>全程冷鏈</span><span>售後保障</span></div>
       </section>
       <section>
-        <h2>客戶禮遇與諮詢</h2>
+        <h2>聯繫我們</h2>
         <p>✉　service@freshcarefruit.tw</p><p>☎　免付費專線 0800-888-920</p><p>◷　週一至週五 09:00 - 18:00</p>
       </section>
       <section>
