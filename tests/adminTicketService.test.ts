@@ -169,6 +169,32 @@ describe('admin mock ticket data', () => {
       expect(tickets[0]?.reviewDepartment).toBeUndefined()
     })
 
+    it('loads the complete report data beyond list page and CSV limits', async () => {
+      vi.stubEnv('PROD', false)
+      vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')
+      vi.stubEnv('VITE_ADMIN_TICKETS_MODE', 'api')
+      vi.resetModules()
+      const records = Array.from({ length: 125 }, (_, index) => ({
+        ticket_id: `CS-ALL-${index}`, ticket_status: 'assigned', created_at: '2026-11-20T02:00:00.000Z',
+      }))
+      const fetchMock = vi.fn().mockResolvedValueOnce(csrfBootstrap()).mockResolvedValueOnce(sessionEstablished())
+        .mockImplementation(async (url: string) => {
+          if (url === '/api/admin/tickets') return new Response(JSON.stringify({ success: true, count: records.length, tickets: records }))
+          const id = new URL(url, 'http://localhost').searchParams.get('ticket_id')
+          const ticket = records.find((record) => record.ticket_id === id)
+          return new Response(JSON.stringify({ success: true, ticket: { ...ticket, ai_category: 'quality', ai_department: 'QA', review_department: 'QA' }, contact: null, events: [], warnings: [] }))
+        })
+      vi.stubGlobal('fetch', fetchMock)
+      const { loginAdmin } = await import('../src/services/adminAuthService')
+      const { fetchAdminTicketsForReport } = await import('../src/services/adminTicketService')
+      await loginAdmin({ email: 'worker@example.com', password: 'example-password' })
+      const tickets = await fetchAdminTicketsForReport()
+      expect(tickets).toHaveLength(125)
+      expect(tickets[124]).toMatchObject({ id: 'CS-ALL-124', reviewDepartment: 'QA', aiSuggestion: { category: 'quality', department: 'QA' } })
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/admin/ticket-detail?'))).toHaveLength(125)
+      expect(fetchMock.mock.calls.some(([url]) => /page=|limit=|export-tickets/.test(String(url)))).toBe(false)
+    })
+
     it('posts the selected ticket to start review and reports workflow HTTP errors', async () => {
       vi.stubEnv('PROD', false)
       vi.stubEnv('VITE_ADMIN_AUTH_MODE', 'api')

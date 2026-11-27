@@ -9,6 +9,7 @@ import type { AdminTicket } from '@/types/adminTicket'
 import {
   calculateAdminTicketStatistics,
   createAdminStatisticsWorkbook,
+  writeAdminStatisticsWorkbook,
   downloadAdminStatisticsWorkbook,
 } from '@/utils/adminTicketStatistics'
 
@@ -54,8 +55,9 @@ async function exportWorkbook() {
   exporting.value = true
   exportError.value = ''
   try {
-    const workbook = await createAdminStatisticsWorkbook(tickets.value)
-    const data = await workbook.xlsx.writeBuffer()
+    const exportTickets = await fetchAdminTicketsForReport()
+    const workbook = await createAdminStatisticsWorkbook(exportTickets)
+    const data = await writeAdminStatisticsWorkbook(workbook)
     downloadAdminStatisticsWorkbook(data)
   } catch (cause) {
     console.error('Unable to export the FreshCare statistics workbook:', cause)
@@ -100,8 +102,7 @@ onMounted(() => { void loadReportData() })
           <span class="admin-topbar-brand-text"><strong>FreshCare</strong><small>品質工單營運系統</small></span>
         </RouterLink>
         <nav class="admin-breadcrumb" aria-label="頁面位置"><RouterLink to="/admin/dashboard">後台中心</RouterLink><span>›</span><strong>統計報表</strong></nav>
-        <div class="admin-topbar-actions"></div>
-        <div class="admin-user"><span><strong>內部管理員</strong><small>客服營運部</small></span><i aria-hidden="true">人</i></div>
+        <div class="admin-user"><span><strong>內部管理員</strong></span><img class="admin-avatar" src="/images/admin/admin-avatar.png" alt="管理員頭像" width="42" height="42" /></div>
         <button class="admin-topbar-logout" type="button" @click="logout">
           <span aria-hidden="true">⇥</span><span>登出</span>
         </button>
@@ -162,12 +163,14 @@ onMounted(() => { void loadReportData() })
               <article class="admin-report-kpi is-rate">
                 <div class="admin-report-kpi-heading">
                   <span>處置完成率</span>
+                </div>
+                <div class="admin-report-kpi-value">
+                  {{ formatPercent(statistics.completionRate) }}
                   <svg class="admin-report-mini-ring" viewBox="0 0 36 36" aria-hidden="true">
                     <circle cx="18" cy="18" r="15.5" pathLength="100" />
                     <circle class="is-progress" cx="18" cy="18" r="15.5" pathLength="100" :style="{ strokeDasharray: `${statistics.completionRate * 100} 100` }" />
                   </svg>
                 </div>
-                <div class="admin-report-kpi-value">{{ formatPercent(statistics.completionRate) }}</div>
                 <p>{{ statistics.finalTreatmentTotal }} / {{ statistics.total }} 件已完成處置決策</p>
               </article>
             </div>
@@ -253,9 +256,10 @@ onMounted(() => { void loadReportData() })
                 </div>
                 <div class="admin-report-columns">
                   <div v-for="status in statistics.statusCounts" :key="status.value" class="admin-report-column" role="listitem" :aria-label="`${status.label} ${status.count} 件，${formatPercent(statistics.total ? status.count / statistics.total : null)}`">
-                    <strong>{{ status.count }}</strong>
                     <div class="admin-report-column-bar-wrap">
-                      <i :class="`status-${status.value}`" :style="{ height: `${status.count ? Math.max(4, status.count / chartMax * 100) : 0}%` }"></i>
+                      <i :class="`status-${status.value}`" :style="{ height: `${status.count ? Math.max(4, status.count / chartMax * 100) : 0}%` }">
+                        <strong>{{ status.count }}</strong>
+                      </i>
                     </div>
                     <span>{{ status.label }}</span>
                     <small>{{ formatPercent(statistics.total ? status.count / statistics.total : null) }}</small>
@@ -298,12 +302,37 @@ onMounted(() => { void loadReportData() })
             </div>
           </section>
         </div>
-
-        <footer v-if="loadStatus === 'ready' && tickets.length" class="admin-report-footnote">
-          報表依已驗證 Session 載入的 {{ tickets.length }} 筆工單與工單詳情計算；未知／未列狀態不會併入五種主要狀態。
-        </footer>
       </main>
     </div>
     <AdminFlowGuideModal :open="showFlowGuide" @close="showFlowGuide = false" />
   </div>
 </template>
+
+<style scoped>
+.admin-topbar > .admin-user {
+  margin-left: auto;
+}
+
+.admin-report-kpi::after {
+  content: none;
+}
+
+.admin-report-kpi .admin-report-kpi-heading > i {
+  background: transparent;
+}
+
+/* Retain the heading height so the value and explanation stay in place. */
+.admin-report-kpi.is-rate .admin-report-kpi-heading {
+  min-height: 38px;
+}
+
+.admin-report-kpi.is-rate .admin-report-kpi-value {
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-report-kpi.is-rate .admin-report-mini-ring {
+  width: 28px;
+  height: 28px;
+}
+</style>

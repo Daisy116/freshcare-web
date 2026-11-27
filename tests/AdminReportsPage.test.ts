@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminReportsPage from '../src/pages/AdminReportsPage.vue'
 import { fetchAdminTicketsForReport } from '../src/services/adminTicketService'
+import Excel from 'exceljs'
+import * as reportExport from '../src/utils/adminTicketStatistics'
 import type { AdminTicket } from '../src/types/adminTicket'
 
 vi.mock('vue-router', () => ({
@@ -19,7 +21,12 @@ vi.mock('../src/services/adminAuthService', () => ({
 
 const fetchTicketsMock = vi.mocked(fetchAdminTicketsForReport)
 
+function exportTicket(id: string): AdminTicket {
+  return { id, customerName: '', phone: '', email: '', orderNumber: '', channel: '', product: '', issueType: 'quality', description: '', department: '', priority: 'medium', status: 'received', createdAt: '', updatedAt: '', closedAt: null, orchard: '', attachments: [], aiSuggestion: null, events: [] }
+}
+
 describe('admin reports page', () => {
+  afterEach(() => { vi.restoreAllMocks() })
   beforeEach(() => {
     fetchTicketsMock.mockReset()
   })
@@ -85,4 +92,35 @@ describe('admin reports page', () => {
     expect(wrapper.text()).toContain('已提出補件要求，等待顧客提供資訊')
     expect(wrapper.text()).toContain('已完成工單結案處置')
   })
+  it('refreshes all tickets at export time and downloads the management workbook', async () => {
+    const current = Array.from({ length: 125 }, (_, index) => exportTicket(`CS-NEW-${index}`))
+    fetchTicketsMock.mockResolvedValueOnce([exportTicket('CS-OLD')]).mockResolvedValueOnce(current)
+    const download = vi.spyOn(reportExport, 'downloadAdminStatisticsWorkbook').mockImplementation(() => {})
+    const wrapper = mount(AdminReportsPage)
+    await flushPromises()
+    await wrapper.get('.admin-excel-export').trigger('click')
+    await vi.waitFor(() => { expect(download).toHaveBeenCalledOnce() })
+    expect(fetchTicketsMock).toHaveBeenCalledTimes(2)
+    const data = download.mock.calls[0]![0]
+    const workbook = await new Excel.Workbook().xlsx.load(data)
+    expect(workbook.worksheets.map(({ name }) => name)).toEqual(['營運總覽', '工單狀態分析', 'AI 輔助成效'])
+    expect(workbook.getWorksheet('營運總覽')!.getCell('A7').result).toBe(125)
+    expect(wrapper.get('.admin-excel-export').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('reports refresh failures and never downloads a stale report', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchTicketsMock.mockResolvedValueOnce([exportTicket('CS-OLD')]).mockRejectedValueOnce(new Error('匯出資料讀取失敗'))
+    const download = vi.spyOn(reportExport, 'downloadAdminStatisticsWorkbook').mockImplementation(() => {})
+    const wrapper = mount(AdminReportsPage)
+    await flushPromises()
+    await wrapper.get('.admin-excel-export').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.admin-export-error').text()).toBe('Excel 報表匯出失敗，請稍後重試。')
+    expect(download).not.toHaveBeenCalled()
+    expect(wrapper.get('.admin-excel-export').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
 })

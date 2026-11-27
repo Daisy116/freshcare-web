@@ -528,7 +528,7 @@ async function exportTicketsCsv() {
           <button type="button" aria-label="通知" disabled>♧<i></i></button>
           <button type="button" aria-label="說明" disabled>?</button>
         </div>
-        <div class="admin-user"><span><strong>內部管理員</strong><small>客服營運部</small></span><i aria-hidden="true">人</i></div>
+        <div class="admin-user"><span><strong>內部管理員</strong><small>客服營運部</small></span><img class="admin-avatar" src="/images/admin/admin-avatar.png" alt="管理員頭像" width="42" height="42" /></div>
         <button class="admin-topbar-logout" type="button" @click="logout">
            <svg
               width="20"
