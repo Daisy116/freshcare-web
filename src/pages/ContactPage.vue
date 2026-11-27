@@ -194,7 +194,7 @@ function nextStep() {
 .customer-process h2 { display: flex; align-items: center; gap: 12px; }
 .process-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; font-size: 28px; line-height: 1; }
 .customer-process .process-list::before { display: none; }
-.customer-process .process-list strong { display: block; line-height: 18px; }
+.customer-process .process-list strong { display: block; line-height: var(--line-height-body); }
 .customer-process .process-list li::before {
   box-sizing: border-box;
   top: 3px;

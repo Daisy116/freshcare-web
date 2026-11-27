@@ -91,7 +91,7 @@ async function searchTicket() {
 <style scoped>
 .customer-history { margin-top: 24px; }
 .customer-history h3 { font-size: 16px; }
-.customer-history li, .customer-history p { font-size: 12px; }
+.customer-history li, .customer-history p { font-size: var(--text-data); }
 .customer-history strong { display: block; }
 .customer-description, .customer-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .track-ticket-details dd { overflow-wrap: anywhere; }
